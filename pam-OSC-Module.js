@@ -676,9 +676,10 @@ module.exports = {
           }
 
           if (isEncoderPage(config)) {
-            if (config.featureGroup) {
-              send(ip, oscPort, prefix + "/cmd", { type: "s", value: 'FeatureGroup "' + config.featureGroup + '"' });
-            }
+            // Selecting an attribute shows its feature group in MA. "FeatureGroup" goes through MA's encoder
+            // banks, which can land on another group (e.g. Dimmer instead of Focus).
+            const attribute = config.attributes.find((name) => !availableAttributes || availableAttributes.has(name));
+            send(ip, oscPort, prefix + "/cmd", { type: "s", value: 'Attribute "' + attribute + '"' });
             enterAttributeMode(port, ctrl);
             midiUtils.sendEncoderPageLED(routing, port);
             midiUtils.sendPageLED(routing, page);
