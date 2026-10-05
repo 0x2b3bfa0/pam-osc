@@ -26,7 +26,21 @@ module.exports = {
   sendMeter: sendMeter,
   METER_OVERLOAD_ON: 0xe,
   METER_OVERLOAD_OFF: 0xf,
+  sendPageLED: sendPageLED,
 };
+
+// Lights the page buttons of the current page
+function sendPageLED(routing, page) {
+  for (let name of Object.keys(routing)) {
+    for (let midiNote of Object.keys(routing[name].note)) {
+      const note = routing[name].note[midiNote];
+      if (note.page) {
+        const active = "" + note.page == "" + page;
+        sendNoteResponse(routing, name, parseInt(midiNote), active ? "On" : "Off");
+      }
+    }
+  }
+}
 
 // MC level meter: channel pressure with the strip in the high and the level (0-13) or an overload command
 // (METER_OVERLOAD_ON/OFF) in the low nibble

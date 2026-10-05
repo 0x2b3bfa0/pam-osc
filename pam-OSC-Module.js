@@ -275,6 +275,19 @@ module.exports = {
           });
         }
 
+        if (config.page) {
+          // Create the page if it doesn't exist yet, then switch to it; one Lua call keeps both in order
+          send(ip, oscPort, prefix + "/cmd", {
+            type: "s",
+            value:
+              'Lua "if not DataPool().Pages[' + config.page + "] then DataPool().Pages:Create(" + config.page +
+              ") end; Cmd('Page " + config.page + "')\"",
+          });
+          // The X-Touch switches a lit LED off when its button is pressed, and MA sends no page update
+          // if the page is already selected, so restore the page LEDs ourselves
+          setTimeout(() => midiUtils.sendPageLED(routing, page), 100);
+        }
+
         if (config.cmd) {
           send(ip, oscPort, prefix + "/cmd", {
             type: "s",
@@ -337,6 +350,7 @@ module.exports = {
       }
       if (address?.includes("/updatePage/current")) {
         page = "" + args[0].value;
+        midiUtils.sendPageLED(routing, page);
       }
       if (addressSplit[1]?.includes("masterEnabled")) {
         const mappings = routingUtils.getRoutingNoteByCMD(routing, addressSplit[2]);
