@@ -291,6 +291,55 @@ local function getVisibleExecutors(pageIndex)
     return visible
 end
 
+-- OSC goes over UDP with Lua's socket library to the destination of the OSC entry, so it doesn't fill MA's command
+-- line history. Without the library or a UDP entry, it falls back to SendOSC commands.
+local osc = nil
+
+local function openOSC()
+    osc = nil
+    local ok, result = pcall(function()
+        local entry = ShowData().OSCBase[oscEntry]
+        if entry.MODE ~= "UDP" then
+            return nil
+        end
+        local udp = require("socket").udp()
+        udp:setoption("broadcast", true)
+        return { udp = udp, ip = entry.DESTINATIONIP, port = tonumber(entry.PORT), prefix = entry.PREFIX or "" }
+    end)
+    if ok and result and result.ip and result.port and string.pack then
+        osc = result
+    end
+    Printf("pam-osc: sending OSC " .. (osc and ("directly to " .. osc.ip .. ":" .. osc.port) or "with SendOSC commands"))
+end
+
+-- OSC string: null terminated, padded to 4 bytes
+local function oscString(text)
+    text = text .. "\0"
+    return text .. string.rep("\0", (4 - #text % 4) % 4)
+end
+
+-- Sends an OSC message with one argument of type "i" (number), "s" (text), or "T"/"F" (none)
+local function sendOSC(address, oscType, value)
+    if osc then
+        local types, data = oscType, ""
+        if oscType == "i" then
+            local number = tonumber(value) or 0
+            if math.tointeger(number) then
+                data = string.pack(">i4", math.tointeger(number))
+            else
+                types, data = "f", string.pack(">f", number)
+            end
+        elseif oscType == "s" then
+            data = oscString(tostring(value))
+        end
+        local prefix = osc.prefix ~= "" and ("/" .. osc.prefix) or ""
+        if osc.udp:sendto(oscString(prefix .. address) .. oscString("," .. types) .. data, osc.ip, osc.port) then
+            return
+        end
+    end
+    Cmd('SendOSC ' .. oscEntry .. ' "' .. address .. ',' .. oscType .. ',' .. (value ~= nil and tostring(value) or "") .. '"')
+end
+
 local function getMasterEnabled(masterName)
     if MasterPool()['Grand'][masterName]['FADERENABLED'] then
         return true
@@ -307,6 +356,7 @@ local function main()
     local fixedPageNr = GetVar(GlobalVars(), "fixedPageNr") or 0
 
     Printf("start pam OSC main()")
+    openOSC()
     Printf("automaticResendButtons: " .. (automaticResendButtons and "true" or "false"))
     Printf("sendColors: " .. (sendColors and "true" or "false"))
     Printf("sendNames: " .. (sendNames and "true" or "false"))
@@ -341,8 +391,8 @@ local function main()
         end
 
         if forceReload == true then
-            Cmd('SendOSC ' .. oscEntry .. ' "/updatePage/current,i,' .. destPage)
-            Cmd('SendOSC ' .. oscEntry .. ' "/status/deskLocked,' .. (currentDeskLocked and "T," or "F,") .. '"')
+            sendOSC("/updatePage/current", "i", destPage)
+            sendOSC("/status/deskLocked", currentDeskLocked and "T" or "F")
         end
 
         if automaticResendButtons then
@@ -357,7 +407,7 @@ local function main()
         for masterKey, masterValue in pairs(olsMasterEnabledValue) do
             local currValue = getMasterEnabled(masterKey)
             if currValue ~= masterValue then
-                Cmd('SendOSC ' .. oscEntry .. ' "/masterEnabled/' .. masterKey .. ',i,' .. (currValue and 1 or 0))
+                sendOSC("/masterEnabled/" .. masterKey, "i", currValue and 1 or 0)
                 olsMasterEnabledValue[masterKey] = currValue
             end
         end
@@ -382,7 +432,7 @@ local function main()
                 oldButtonValues[maKey] = false
             end
             forceReload = true
-            Cmd('SendOSC ' .. oscEntry .. ' "/updatePage/current,i,' .. destPage)
+            sendOSC("/updatePage/current", "i", destPage)
         end
 
         -- Get all Executors shown on the page, fixed ones included
@@ -433,42 +483,36 @@ local function main()
             if (oldValues[listKey] ~= faderValue and not (isFlash and buttonValue and faderValue == 100)) or forceReload then
                 hasFaderUpdated = true
                 oldValues[listKey] = faderValue
-                Cmd('SendOSC ' .. oscEntry .. '  "/Page' .. destPage .. '/Fader' .. listValue .. ',i,' ..
-                        (faderValue * 1.27) .. '"')
+                sendOSC("/Page" .. destPage .. "/Fader" .. listValue, "i", faderValue * 1.27)
             end
 
             -- Send Button Value
             if oldButtonValues[listKey] ~= buttonValue or forceReload or forceReloadButtons then
                 oldButtonValues[listKey] = buttonValue
-                Cmd('SendOSC ' .. oscEntry .. '  "/Page' .. destPage .. '/Button' .. listValue .. ',s,' ..
-                        (buttonValue and "On" or "Off") .. '"')
+                sendOSC("/Page" .. destPage .. "/Button" .. listValue, "s", buttonValue and "On" or "Off")
             end
 
             -- Send Color Value
             if sendColors and (oldColorValues[listKey] ~= colorValue or forceReload) then
                 oldColorValues[listKey] = colorValue
                 local newValue = string.gsub(colorValue, ",", ";")
-                Cmd('SendOSC ' .. oscEntry .. '  "/Page' .. destPage .. '/Color' .. listValue .. ',s,' .. newValue ..
-                        '"')
+                sendOSC("/Page" .. destPage .. "/Color" .. listValue, "s", newValue)
             end
 
             -- Send whether the key and MA + key have a function
             if oldKeyAssigned[listKey] ~= keyAssigned or forceReload then
                 oldKeyAssigned[listKey] = keyAssigned
-                Cmd('SendOSC ' .. oscEntry .. ' "/Page' .. destPage .. '/KeyFn' .. listValue .. ',i,' ..
-                        (keyAssigned and 1 or 0) .. '"')
+                sendOSC("/Page" .. destPage .. "/KeyFn" .. listValue, "i", keyAssigned and 1 or 0)
             end
             if oldMaKeyAssigned[listKey] ~= maKeyAssigned or forceReload then
                 oldMaKeyAssigned[listKey] = maKeyAssigned
-                Cmd('SendOSC ' .. oscEntry .. ' "/Page' .. destPage .. '/MaKeyFn' .. listValue .. ',i,' ..
-                        (maKeyAssigned and 1 or 0) .. '"')
+                sendOSC("/Page" .. destPage .. "/MaKeyFn" .. listValue, "i", maKeyAssigned and 1 or 0)
             end
 
             -- Send Name Value
             if sendNames and (oldNameValues[listKey] ~= nameValue or forceReload) then
                 oldNameValues[listKey] = nameValue
-                Cmd('SendOSC ' .. oscEntry .. '  "/Page' .. destPage .. '/Name' .. listValue .. ',s,' .. nameValue ..
-                        '"')
+                sendOSC("/Page" .. destPage .. "/Name" .. listValue, "s", nameValue)
             end
         end
         
@@ -482,7 +526,7 @@ local function main()
                 if oldTimecodes[slot.no] ~= time or oldTimecodes[slot.no] == nil or forceReload == true then
                     oldTimecodes[slot.no] = time
                         
-                    Cmd('SendOSC ' .. oscEntry .. ' "/Timecode' .. slot.no .. ',s,' .. time .. '"')
+                    sendOSC("/Timecode" .. slot.no, "s", time)
                 end
             end
         end
@@ -493,7 +537,7 @@ local function main()
         local cmdLineActive = cmdText ~= ""
         if cmdLineActive ~= oldCmdLineActive or forceReload then
             oldCmdLineActive = cmdLineActive
-            Cmd('SendOSC ' .. oscEntry .. ' "/CmdLine,i,' .. (cmdLineActive and 1 or 0) .. '"')
+            sendOSC("/CmdLine", "i", cmdLineActive and 1 or 0)
         end
         local key = GetVar(GlobalVars(), "pamOscKey") or ""
         if key ~= "" then
@@ -518,10 +562,10 @@ local function main()
         if selectionKey ~= oldSelectionKey or forceReload then
             oldSelectionKey = selectionKey
             if pageAttributes ~= "" then
-                Cmd('SendOSC ' .. oscEntry .. ' "/AttributesAvailable,s,;' .. getAvailableAttributes(pageAttributes) .. '"')
+                sendOSC("/AttributesAvailable", "s", ";" .. getAvailableAttributes(pageAttributes))
             end
             if groupAttributes ~= "" then
-                Cmd('SendOSC ' .. oscEntry .. ' "/GroupAttributes,s,;' .. getGroupAttributes(groupAttributes) .. '"')
+                sendOSC("/GroupAttributes", "s", ";" .. getGroupAttributes(groupAttributes))
             end
         end
 
@@ -529,7 +573,7 @@ local function main()
         local featureGroup = getSelectedFeatureGroup()
         if featureGroup ~= "" and (featureGroup ~= oldFeatureGroup or forceReload) then
             oldFeatureGroup = featureGroup
-            Cmd('SendOSC ' .. oscEntry .. ' "/FeatureGroup,s,' .. featureGroup .. '"')
+            sendOSC("/FeatureGroup", "s", featureGroup)
         end
 
         -- Send the attribute values the pam-osc module asks for (set with SetGlobalVariable "pamOscAttributes")
@@ -538,8 +582,8 @@ local function main()
             local values, actives = getAttributeValues(attributeList)
             if attributeList .. "|" .. values .. "|" .. actives ~= oldAttributeValues or forceReload then
                 oldAttributeValues = attributeList .. "|" .. values .. "|" .. actives
-                Cmd('SendOSC ' .. oscEntry .. ' "/Attributes,s,' .. values .. '"')
-                Cmd('SendOSC ' .. oscEntry .. ' "/AttributesActive,s,' .. actives .. '"')
+                sendOSC("/Attributes", "s", values)
+                sendOSC("/AttributesActive", "s", actives)
             end
         else
             oldAttributeValues = ""
