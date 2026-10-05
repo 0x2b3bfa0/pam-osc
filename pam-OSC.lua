@@ -28,6 +28,7 @@ local oldAttributeValues = ""
 local oldFeatureGroup = ""
 local oldCmdLineActive = nil
 local oldSelectionKey = nil
+local oldSelectionError = nil
 local oldDeskLockedStatus = 0
 
 local oscEntry = 2
@@ -204,7 +205,8 @@ local function getGroupAttributes(groupList)
         local inGroup, group = pcall(function()
             return attribute.Feature:Parent().name
         end)
-        local index = GetAttributeIndex(attribute.name)
+        local name = tostring(attribute.name)
+        local index = GetAttributeIndex(name)
         if inGroup and found[group] and #found[group] < 8 and index ~= nil then
             local fixtureIndex = SelectionFirst()
             while fixtureIndex ~= nil and GetUIChannelIndex(fixtureIndex, index) == nil do
@@ -214,9 +216,9 @@ local function getGroupAttributes(groupList)
                 local hasPretty, pretty = pcall(function()
                     return attribute.Pretty
                 end)
-                pretty = (hasPretty and pretty and pretty ~= "") and pretty or attribute.name
+                pretty = (hasPretty and type(pretty) == "string" and pretty ~= "") and pretty or name
                 -- These characters separate values here or in SendOSC
-                found[group][#found[group] + 1] = attribute.name .. "=" .. pretty:gsub('[,;|="]', " ")
+                found[group][#found[group] + 1] = name .. "=" .. pretty:gsub('[,;|="]', " ")
             end
         end
     end
@@ -483,6 +485,9 @@ local function main()
             end
         end
 
+        -- Selection dependent reports for the module's attribute mode. They run protected: an error there is
+        -- printed once and must not stop the page, button and fader feedback above.
+        local selectionOk, selectionError = pcall(function()
         -- When the selection changes, send which of the module's encoder page attributes (set with
         -- SetGlobalVariable "pamOscPageAttributes") the selected fixtures have, and their attributes in the feature
         -- groups of pages that take them from MA ("pamOscGroupAttributes"). Lists start with ";" as they may be empty.
@@ -519,6 +524,11 @@ local function main()
         else
             oldAttributeValues = ""
         end
+        end)
+        if not selectionOk and selectionError ~= oldSelectionError then
+            Printf("pam-osc: attribute feedback failed: " .. tostring(selectionError))
+        end
+        oldSelectionError = not selectionOk and selectionError or nil
 
         forceReload = false
         forceReloadButtons = false
