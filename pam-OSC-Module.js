@@ -32,6 +32,8 @@ var cmdLineActive = false;
 // Last button state ("On"/"Off") and fader value (0-127) reported by MA per executor
 var buttonStates = {};
 var execFaderValues = {};
+// Encoder page attributes the selected fixtures have (reported by the MA plugin), null until known
+var availableAttributes = null;
 // Whether the key and the MA + key of an executor have a function (reported by the MA plugin), per executor
 var keyAssigned = {};
 var maKeyAssigned = {};
@@ -104,6 +106,7 @@ setTimeout(function () {
   oscUtils.triggerForceReload(ip, oscPort, prefix);
   // Stop attribute value reports left over from an earlier session
   requestAttributeValues();
+  requestAvailableAttributes();
 }, 500);
 
 // MC meters and their overload LEDs fall back on their own, so they have to be resent continuously
@@ -116,9 +119,29 @@ setInterval(function () {
   }
 }, 100);
 
-// Encoder page buttons without attributes are disabled
+// Encoder page buttons are disabled without attributes, or (like in MA) if the selected fixtures have none of them
 function isEncoderPage(note) {
-  return note.local == "encoderPage" && (note.attributes || []).length > 0;
+  const attributes = note.attributes || [];
+  return (
+    note.local == "encoderPage" &&
+    attributes.length > 0 &&
+    (!availableAttributes || attributes.some((attribute) => availableAttributes.has(attribute)))
+  );
+}
+
+// Tells the MA plugin to report which encoder page attributes the selected fixtures have
+function requestAvailableAttributes() {
+  const attributes = new Set();
+  for (let device of Object.keys(routing)) {
+    for (let note of Object.values(routing[device].note)) {
+      if (note.local == "encoderPage") (note.attributes || []).forEach((attribute) => attributes.add(attribute));
+    }
+  }
+  if (attributes.size == 0) return;
+  send(ip, oscPort, prefix + "/cmd", {
+    type: "s",
+    value: 'SetGlobalVariable "pamOscPageAttributes" "' + [...attributes].join(";") + '"',
+  });
 }
 
 // While the encoder labels are shown (attribute mode), a control's "attributeMode" overrides its settings
@@ -763,6 +786,9 @@ module.exports = {
             moveAttributeFader(device, i + 1);
           });
         }
+      }
+      if (address === "/AttributesAvailable") {
+        availableAttributes = new Set(("" + args[0].value).split(";").filter((attribute) => attribute));
       }
       if (address === "/AttributesActive") {
         const actives = ("" + args[0].value).split(";");

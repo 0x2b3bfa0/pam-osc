@@ -27,6 +27,7 @@ local oldTimecodes = {}
 local oldAttributeValues = ""
 local oldFeatureGroup = ""
 local oldCmdLineActive = nil
+local oldSelectionKey = nil
 local oldDeskLockedStatus = 0
 
 local oscEntry = 2
@@ -150,6 +151,36 @@ local function getAttributeValues(attributeList)
         actives[#actives + 1] = active and "1" or "0"
     end
     return table.concat(values, ";"), table.concat(actives, ";")
+end
+
+-- Names (separated by ";") of the attributes, out of the given ones, that at least one selected fixture has
+local function getAvailableAttributes(attributeList)
+    local attributes = {}
+    for name in string.gmatch(attributeList, "[^;]+") do
+        local index = GetAttributeIndex(name)
+        if index ~= nil then
+            attributes[#attributes + 1] = { name = name, index = index }
+        end
+    end
+
+    local available = {}
+    local fixtureIndex = SelectionFirst()
+    while fixtureIndex ~= nil do
+        for _, attribute in ipairs(attributes) do
+            if not available[attribute.name] and GetUIChannelIndex(fixtureIndex, attribute.index) ~= nil then
+                available[attribute.name] = true
+            end
+        end
+        fixtureIndex = SelectionNext(fixtureIndex)
+    end
+
+    local names = {}
+    for _, attribute in ipairs(attributes) do
+        if available[attribute.name] then
+            names[#names + 1] = attribute.name
+        end
+    end
+    return table.concat(names, ";")
 end
 
 -- Name of the feature group of the selected feature (e.g. "Position"), or ""
@@ -404,6 +435,17 @@ local function main()
             if cmdLineActive then
                 clearCmdLine()
                 Cmd(cmdText .. " Page " .. key)
+            end
+        end
+
+        -- Send which of the module's encoder page attributes (set with SetGlobalVariable "pamOscPageAttributes")
+        -- the selected fixtures have, when the selection changes. The list starts with ";", as it may be empty.
+        local pageAttributes = GetVar(GlobalVars(), "pamOscPageAttributes") or ""
+        if pageAttributes ~= "" then
+            local selectionKey = pageAttributes .. "|" .. tostring(SelectionCount()) .. "|" .. tostring(SelectionFirst())
+            if selectionKey ~= oldSelectionKey or forceReload then
+                oldSelectionKey = selectionKey
+                Cmd('SendOSC ' .. oscEntry .. ' "/AttributesAvailable,s,;' .. getAvailableAttributes(pageAttributes) .. '"')
             end
         end
 
