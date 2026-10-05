@@ -83,6 +83,13 @@ settings.read("midi").forEach((deviceMidi) => {
   routing[name] = value;
 });
 
+// Encoder pages without an "attributes" list get the attributes the selection has in their feature group from MA
+for (let device of Object.keys(routing)) {
+  for (let note of Object.values(routing[device].note)) {
+    if (note.local == "encoderPage" && !note.attributes) note.attributesFromMA = true;
+  }
+}
+
 // Start every device on its first encoder page
 for (let device of Object.keys(routing)) {
   const firstPage = Object.keys(routing[device].note).find((note) => isEncoderPage(routing[device].note[note]));
@@ -107,6 +114,7 @@ setTimeout(function () {
   // Stop attribute value reports left over from an earlier session
   requestAttributeValues();
   requestAvailableAttributes();
+  requestGroupAttributes();
 }, 500);
 
 // MC meters and their overload LEDs fall back on their own, so they have to be resent continuously
@@ -119,13 +127,14 @@ setInterval(function () {
   }
 }, 100);
 
-// Encoder page buttons are disabled without attributes, or (like in MA) if the selected fixtures have none of them
+// Encoder page buttons are disabled without attributes, or (like in MA) if the selected fixtures have none of them.
+// Pages with attributes from MA only get those the selection has.
 function isEncoderPage(note) {
   const attributes = note.attributes || [];
   return (
     note.local == "encoderPage" &&
     attributes.length > 0 &&
-    (!availableAttributes || attributes.some((attribute) => availableAttributes.has(attribute)))
+    (note.attributesFromMA || !availableAttributes || attributes.some((attribute) => availableAttributes.has(attribute)))
   );
 }
 
@@ -141,6 +150,21 @@ function requestAvailableAttributes() {
   send(ip, oscPort, prefix + "/cmd", {
     type: "s",
     value: 'SetGlobalVariable "pamOscPageAttributes" "' + [...attributes].join(";") + '"',
+  });
+}
+
+// Tells the MA plugin to report the selection's attributes in the feature groups of pages with attributes from MA
+function requestGroupAttributes() {
+  const groups = new Set();
+  for (let device of Object.keys(routing)) {
+    for (let note of Object.values(routing[device].note)) {
+      if (note.local == "encoderPage" && note.attributesFromMA && note.featureGroup) groups.add(note.featureGroup);
+    }
+  }
+  if (groups.size == 0) return;
+  send(ip, oscPort, prefix + "/cmd", {
+    type: "s",
+    value: 'SetGlobalVariable "pamOscGroupAttributes" "' + [...groups].join(";") + '"',
   });
 }
 
@@ -202,8 +226,8 @@ function sendDisplayColors(device, colorIds) {
   send("midi", device, "/sysex", "F0 00 00 66 " + getMcDeviceId(device) + " 72 " + colorIds.join(" ") + " F7");
 }
 
-// Upper line: the encoder page selected by the button below, lower line: attribute of each encoder. Yellow
-// where the encoder has an attribute, white otherwise.
+// Upper line: the encoder page selected by the button below (blank if disabled), lower line: attribute of each
+// encoder. Yellow where the encoder has an attribute, white otherwise.
 function showEncoderLabels(device) {
   const notes = routing[device].note;
   const pageNotes = Object.keys(notes).filter((note) => notes[note].local == "encoderPage");
@@ -211,7 +235,7 @@ function showEncoderLabels(device) {
   const labels = page.labels || page.attributes || [];
   for (let slot = 0; slot < 8; slot++) {
     const pageBelow = notes[pageNotes[slot]] || {};
-    sendDisplay(device, slot, pageBelow.name || "", labels[slot] || "");
+    sendDisplay(device, slot, isEncoderPage(pageBelow) ? pageBelow.name || "" : "", labels[slot] || "");
   }
   const attributes = page.attributes || [];
   sendDisplayColors(
@@ -790,6 +814,26 @@ module.exports = {
       }
       if (address === "/AttributesAvailable") {
         availableAttributes = new Set(("" + args[0].value).split(";").filter((attribute) => attribute));
+      }
+      // The selection's attributes of the feature groups of pages with attributes from MA, as
+      // ";Group:Attribute=Pretty name|...;..."
+      if (address === "/GroupAttributes") {
+        const groups = {};
+        ("" + args[0].value).split(";").filter((group) => group).forEach((group) => {
+          const [name, list] = group.split(":");
+          groups[name] = (list || "").split("|").filter((entry) => entry).map((entry) => entry.split("="));
+        });
+        for (let device of Object.keys(routing)) {
+          const notes = routing[device].note;
+          for (let midiNote of Object.keys(notes)) {
+            const note = notes[midiNote];
+            if (note.local != "encoderPage" || !note.attributesFromMA || !groups[note.featureGroup]) continue;
+            note.attributes = groups[note.featureGroup].map(([attribute]) => attribute);
+            note.labels = groups[note.featureGroup].map(([attribute, pretty]) => pretty || attribute);
+          }
+          // Show the new attributes and pages in attribute mode
+          if (routing[device].encoderLabels) enterAttributeMode(device, routing[device].encoderPage);
+        }
       }
       if (address === "/AttributesActive") {
         const actives = ("" + args[0].value).split(";");

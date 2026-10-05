@@ -183,6 +183,51 @@ local function getAvailableAttributes(attributeList)
     return table.concat(names, ";")
 end
 
+-- For each feature group (separated by ";"), up to 8 of its attributes that at least one selected fixture has,
+-- as "Group:Attribute=Pretty name|..." separated by ";"
+local function getGroupAttributes(groupList)
+    local ok, definitions = pcall(function()
+        return ShowData().LivePatch.AttributeDefinitions.Attributes:Children()
+    end)
+    if not ok then
+        return ""
+    end
+
+    local found = {}
+    local groups = {}
+    for groupName in string.gmatch(groupList, "[^;]+") do
+        found[groupName] = {}
+        groups[#groups + 1] = groupName
+    end
+
+    for _, attribute in ipairs(definitions) do
+        local inGroup, group = pcall(function()
+            return attribute.Feature:Parent().name
+        end)
+        local index = GetAttributeIndex(attribute.name)
+        if inGroup and found[group] and #found[group] < 8 and index ~= nil then
+            local fixtureIndex = SelectionFirst()
+            while fixtureIndex ~= nil and GetUIChannelIndex(fixtureIndex, index) == nil do
+                fixtureIndex = SelectionNext(fixtureIndex)
+            end
+            if fixtureIndex ~= nil then
+                local hasPretty, pretty = pcall(function()
+                    return attribute.Pretty
+                end)
+                pretty = (hasPretty and pretty and pretty ~= "") and pretty or attribute.name
+                -- These characters separate values here or in SendOSC
+                found[group][#found[group] + 1] = attribute.name .. "=" .. pretty:gsub('[,;|="]', " ")
+            end
+        end
+    end
+
+    local result = {}
+    for _, groupName in ipairs(groups) do
+        result[#result + 1] = groupName .. ":" .. table.concat(found[groupName], "|")
+    end
+    return table.concat(result, ";")
+end
+
 -- Name of the feature group of the selected feature (e.g. "Position"), or ""
 local function getSelectedFeatureGroup()
     local ok, name = pcall(function()
@@ -438,14 +483,20 @@ local function main()
             end
         end
 
-        -- Send which of the module's encoder page attributes (set with SetGlobalVariable "pamOscPageAttributes")
-        -- the selected fixtures have, when the selection changes. The list starts with ";", as it may be empty.
+        -- When the selection changes, send which of the module's encoder page attributes (set with
+        -- SetGlobalVariable "pamOscPageAttributes") the selected fixtures have, and their attributes in the feature
+        -- groups of pages that take them from MA ("pamOscGroupAttributes"). Lists start with ";" as they may be empty.
         local pageAttributes = GetVar(GlobalVars(), "pamOscPageAttributes") or ""
-        if pageAttributes ~= "" then
-            local selectionKey = pageAttributes .. "|" .. tostring(SelectionCount()) .. "|" .. tostring(SelectionFirst())
-            if selectionKey ~= oldSelectionKey or forceReload then
-                oldSelectionKey = selectionKey
+        local groupAttributes = GetVar(GlobalVars(), "pamOscGroupAttributes") or ""
+        local selectionKey = pageAttributes .. "|" .. groupAttributes .. "|" .. tostring(SelectionCount()) .. "|" ..
+                                 tostring(SelectionFirst())
+        if selectionKey ~= oldSelectionKey or forceReload then
+            oldSelectionKey = selectionKey
+            if pageAttributes ~= "" then
                 Cmd('SendOSC ' .. oscEntry .. ' "/AttributesAvailable,s,;' .. getAvailableAttributes(pageAttributes) .. '"')
+            end
+            if groupAttributes ~= "" then
+                Cmd('SendOSC ' .. oscEntry .. ' "/GroupAttributes,s,;' .. getGroupAttributes(groupAttributes) .. '"')
             end
         end
 
