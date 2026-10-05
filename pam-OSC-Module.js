@@ -148,7 +148,7 @@ function requestAvailableAttributes() {
       if (note.local == "encoderPage") (note.attributes || []).forEach((attribute) => attributes.add(attribute));
     }
   }
-  if (attributes.size == 0) return;
+  // Without pages with a fixed list, "" stops reports for a list left from an earlier session
   send(ip, oscPort, prefix + "/cmd", {
     type: "s",
     value: 'SetGlobalVariable "pamOscPageAttributes" "' + [...attributes].join(";") + '"',
@@ -728,7 +728,10 @@ module.exports = {
           if (isEncoderPage(config)) {
             // Selecting an attribute shows its feature group in MA. "FeatureGroup" goes through MA's encoder
             // banks, which can land on another group (e.g. Dimmer instead of Focus).
-            const attribute = config.attributes.find((name) => !availableAttributes || availableAttributes.has(name));
+            // Pages from MA only have attributes the selection has; others take the first one it has
+            const attribute = config.attributesFromMA
+              ? config.attributes[0]
+              : config.attributes.find((name) => !availableAttributes || availableAttributes.has(name));
             send(ip, oscPort, prefix + "/cmd", { type: "s", value: 'Attribute "' + attribute + '"' });
             enterAttributeMode(port, ctrl);
             midiUtils.sendEncoderPageLED(routing, port);
