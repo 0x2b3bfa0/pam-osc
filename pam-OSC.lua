@@ -28,6 +28,7 @@ local oldAttributeValues = ""
 local oldFeatureGroup = ""
 local oldCmdLineActive = nil
 local oldSelectionKey = nil
+local oldProgrammingLayer = nil
 local oldSelectionError = nil
 local oldDeskLockedStatus = 0
 
@@ -357,158 +358,12 @@ local function sendOSC(address, oscType, value)
     Cmd('SendOSC ' .. oscEntry .. ' "' .. address .. ',' .. oscType .. ',' .. (value ~= nil and tostring(value) or "") .. '"')
 end
 
--- The module sends encoder changes of attributes as OSC to this UDP port, so they can follow the layer selected in
--- MA's encoder bar like MA's encoders, which commands can't. The plugin announces that it listens with
--- "/PluginReady"; without that, the module uses commands.
-local pluginPort = 9005
-local listener = nil
-
-local function openListener()
-    local ok, udp = pcall(function()
-        local udp = require("socket").udp()
-        assert(udp:setsockname("*", pluginPort))
-        udp:settimeout(0)
-        return udp
-    end)
-    listener = ok and udp or nil
-    if not ok then
-        Printf("pam-osc: can't listen on port " .. pluginPort .. ": " .. tostring(udp))
-    end
-end
-
--- Reads an OSC string at a position; returns it and the position after its padding
-local function readOSCString(data, position)
-    local zero = data:find("\0", position, true)
-    if not zero then
-        return nil, #data + 1
-    end
-    return data:sub(position, zero - 1), zero + 1 + (3 - (zero - position) % 4)
-end
-
--- Address and arguments (types i, f and s) of an OSC message
-local function decodeOSC(data)
-    local address, position = readOSCString(data, 1)
-    local types
-    types, position = readOSCString(data, position)
-    local args = {}
-    for oscType in (types or ""):sub(2):gmatch(".") do
-        if oscType == "i" then
-            args[#args + 1], position = string.unpack(">i4", data, position)
-        elseif oscType == "f" then
-            args[#args + 1], position = string.unpack(">f", data, position)
-        elseif oscType == "s" then
-            args[#args + 1], position = readOSCString(data, position)
-        end
-    end
-    return address, args
-end
-
--- Copy of a UI channel's programmer phaser that SetProgPhaser accepts, or nil if it isn't in the programmer
-local function copyPhaser(uiChannelIndex)
-    local ok, phaser = pcall(GetProgPhaser, uiChannelIndex, false)
-    if not ok or type(phaser) ~= "table" or (phaser.mask_active_value or 0) == 0 or type(phaser[1]) ~= "table" then
-        return nil
-    end
-    local copy = {}
-    for _, key in ipairs({ "abs_preset", "rel_preset", "fade", "delay", "speed", "phase", "measure", "gridpos" }) do
-        copy[key] = phaser[key]
-    end
-    for i, step in ipairs(phaser) do
-        copy[i] = {}
-        for key, value in pairs(step) do
-            -- absolute_value is the DMX value of absolute, which may change
-            if key ~= "absolute_value" then
-                copy[i][key] = value
-            end
-        end
-    end
-    return copy
-end
-
--- Encoder bar layers (the user profile's ProgrammingLayer) commands can't change, and what they change: a value of
--- every step, or a setting of the phaser, with its range, value when unset, and how much an encoder step changes it
-local stepLayers = {
-    Relative = { field = "relative", min = -100, max = 100 },
-    Width = { field = "width", min = 0, max = 100, default = 100 },
-    Accel = { field = "accel", min = 0, max = 100 },
-    Decel = { field = "decel", min = 0, max = 100 },
-    Transition = { field = "trans", min = 0, max = 100 },
-}
-local phaserLayers = {
-    Fade = { field = "fade", min = 0 },
-    Delay = { field = "delay", min = 0 },
-    Speed = { field = "speed", min = 0 },
-    Phase = { field = "phase", scale = 10 },
-    Measure = { field = "measure", min = 0, max = 100 },
-}
-
+-- The layer selected in MA's encoder bar (the user profile's ProgrammingLayer), e.g. "Absolute" or "Delay"
 local function getProgrammingLayer()
     local ok, layer = pcall(function()
         return CurrentProfile().PROGRAMMINGLAYER
     end)
     return ok and tostring(layer) or "Absolute"
-end
-
-local function limit(value, layer)
-    return math.min(math.max(value, layer.min or -math.huge), layer.max or math.huge)
-end
-
--- Changes a UI channel by an encoder step in one of those layers: all steps of a phaser together, or one of its
--- settings
-local function changeChannel(uiChannelIndex, name, delta, defaultValue)
-    local phaser = copyPhaser(uiChannelIndex) or { { absolute = defaultValue } }
-    if stepLayers[name] then
-        local layer = stepLayers[name]
-        for _, step in ipairs(phaser) do
-            local current = step[layer.field] or layer.default or 0
-            step[layer.field] = limit(current + delta, layer)
-        end
-    elseif phaserLayers[name] then
-        local layer = phaserLayers[name]
-        phaser[layer.field] = limit((phaser[layer.field] or 0) + delta * (layer.scale or 1), layer)
-    else
-        return
-    end
-    SetProgPhaser(uiChannelIndex, phaser)
-end
-
--- Handles the encoder changes the module sent since the last call. In the Absolute layer they're commands: those
--- only change the step selected in MA's encoder bar, like MA's encoders. Other layers are changed in Lua.
-local function receiveFromModule()
-    if not listener then
-        return
-    end
-    while true do
-        local data = listener:receive()
-        if not data then
-            return
-        end
-        local ok, err = pcall(function()
-            local address, args = decodeOSC(data)
-            local attribute, value = args[1], tonumber(args[2])
-            if address ~= "/pam/attribute/relative" or not value then
-                return
-            end
-            local layer = getProgrammingLayer()
-            if layer == "Absolute" then
-                -- %g drops the float noise OSC adds (0.1 arrives as 0.100000001)
-                Cmd('Attribute "' .. attribute .. '" At ' .. (value > 0 and "+ " or "- ") .. string.format("%.6g", math.abs(value)))
-                return
-            end
-            local attributeIndex = GetAttributeIndex(attribute)
-            local fixtureIndex = attributeIndex and SelectionFirst()
-            while fixtureIndex ~= nil do
-                local uiChannelIndex = GetUIChannelIndex(fixtureIndex, attributeIndex)
-                if uiChannelIndex ~= nil then
-                    changeChannel(uiChannelIndex, layer, value, getDefaultValue(fixtureIndex, uiChannelIndex) or 0)
-                end
-                fixtureIndex = SelectionNext(fixtureIndex)
-            end
-        end)
-        if not ok then
-            Printf("pam-osc: can't apply " .. tostring(err))
-        end
-    end
 end
 
 local function getMasterEnabled(masterName)
@@ -528,7 +383,6 @@ local function main()
 
     Printf("start pam OSC main()")
     updateOSC()
-    openListener()
     local oscTick = 0
     Printf("automaticResendButtons: " .. (automaticResendButtons and "true" or "false"))
     Printf("sendColors: " .. (sendColors and "true" or "false"))
@@ -551,10 +405,6 @@ local function main()
         if oscTick >= 10 then
             oscTick = 0
             updateOSC()
-            -- Only over direct OSC: as SendOSC command, this would fill the command line history
-            if listener and osc then
-                sendOSC("/PluginReady", "i", pluginPort)
-            end
         end
 
         local currentDeskLocked = DeskLocked()
@@ -752,6 +602,13 @@ local function main()
             end
         end
 
+        -- Send the encoder bar's layer, so the module's encoders change the same one
+        local programmingLayer = getProgrammingLayer()
+        if programmingLayer ~= oldProgrammingLayer or forceReload then
+            oldProgrammingLayer = programmingLayer
+            sendOSC("/ProgrammingLayer", "s", programmingLayer)
+        end
+
         -- Send the selected feature group
         local featureGroup = getSelectedFeatureGroup()
         if featureGroup ~= "" and (featureGroup ~= oldFeatureGroup or forceReload) then
@@ -781,18 +638,9 @@ local function main()
         forceReloadButtons = false
 
         -- delay
-        -- Apply the module's attribute changes more often than the rest is updated
-        for _ = 1, 5 do
-            receiveFromModule()
-            coroutine.yield(tick / 5)
-        end
+        coroutine.yield(tick)
     end
 
-    -- Free the port for the next start
-    if listener then
-        listener:close()
-        listener = nil
-    end
 end
 
 

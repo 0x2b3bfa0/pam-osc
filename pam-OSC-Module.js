@@ -32,10 +32,8 @@ var cmdLineActive = false;
 // Last button state ("On"/"Off") and fader value (0-127) reported by MA per executor
 var buttonStates = {};
 var execFaderValues = {};
-// The MA plugin applies encoder changes it receives on this port in the layer selected in MA's encoder bar, like
-// MA's encoders, which commands can't. It announces itself with "/PluginReady"; without that, commands are used.
-const PLUGIN_PORT = 9005;
-var pluginReadyAt = 0;
+// The layer selected in MA's encoder bar (reported by the MA plugin), which attribute encoders change like MA's
+var programmingLayer = "Absolute";
 // Encoder page attributes the selected fixtures have (reported by the MA plugin), null until known
 var availableAttributes = null;
 // Whether the key and the MA + key of an executor have a function (reported by the MA plugin), per executor
@@ -439,22 +437,15 @@ function updateMeters(exec) {
   });
 }
 
-function isPluginReady() {
-  return Date.now() - pluginReadyAt < 3000;
-}
-
 // Changes an attribute of the selected fixtures with MA commands, which act on the step selected in MA's encoder
-// bar like MA does. Encoder steps go through the MA plugin, which also follows the encoder bar's layer.
+// bar like MA's own controls. Relative changes (encoders) also go to the encoder bar's layer.
 // change: { relative: step in readout units }, { absolute: percent } or { default: true }
 function changeAttribute(attribute, change) {
-  if (change.relative !== undefined && isPluginReady()) {
-    send(ip, PLUGIN_PORT, "/pam/attribute/relative", { type: "s", value: attribute }, { type: "f", value: change.relative });
-    return;
-  }
   let command = "Attribute \"" + attribute + "\" At Default";
   if (change.absolute !== undefined) command = "Attribute \"" + attribute + "\" At Absolute Percent " + change.absolute;
   if (change.relative !== undefined) {
-    command = "Attribute \"" + attribute + "\" At " + (change.relative > 0 ? "+ " : "- ") + Math.abs(change.relative);
+    const layer = programmingLayer == "Absolute" ? "" : programmingLayer + " ";
+    command = "Attribute \"" + attribute + "\" At " + layer + (change.relative > 0 ? "+ " : "- ") + Math.abs(change.relative);
   }
   send(ip, oscPort, prefix + "/cmd", { type: "s", value: command });
 }
@@ -819,8 +810,8 @@ module.exports = {
           }
         }
       }
-      if (address === "/PluginReady") {
-        pluginReadyAt = Date.now();
+      if (address === "/ProgrammingLayer") {
+        programmingLayer = "" + args[0].value;
       }
       if (address === "/CmdLine") {
         cmdLineActive = args[0].value == 1;
