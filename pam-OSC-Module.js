@@ -21,6 +21,10 @@ var meters = {};
 var meterOverloads = {};
 // Sequence and cue names per MIDI device, indexed by display slot 0-7
 var names = {};
+// Executor fader positions (pitch values) per MIDI device, indexed by pitch channel
+var execFaders = {};
+// Attribute fader state per MIDI device: last values (percent or "-") from MA and touched faders, by pitch channel
+var attributeFaders = {};
 var deskLocked = false;
 // Last button state ("On"/"Off") and fader value (0-127) reported by MA per executor
 var buttonStates = {};
@@ -92,6 +96,8 @@ for (let device of Object.keys(routing)) {
 
 setTimeout(function () {
   oscUtils.triggerForceReload(ip, oscPort, prefix);
+  // Stop attribute value reports left over from an earlier session
+  requestAttributeValues();
 }, 500);
 
 // MC meters and their overload LEDs fall back on their own, so they have to be resent continuously
@@ -194,6 +200,13 @@ function enterAttributeMode(device, pageNote) {
   showEncoderLabels(device);
   showEncoderRings(device);
   showExecButtonLEDs(device);
+  if (isAttributeFaderMode(device)) {
+    // Values of the new attributes come from MA; until then they are unknown
+    const state = getAttributeFaderState(device);
+    state.values = {};
+    for (let channel = 1; channel <= 8; channel++) moveAttributeFader(device, channel);
+  }
+  requestAttributeValues();
 }
 
 function leaveAttributeMode(device) {
@@ -201,6 +214,10 @@ function leaveAttributeMode(device) {
   showExecNames(device);
   showEncoderRings(device);
   showExecButtonLEDs(device);
+  for (let channel of Object.keys(execFaders[device] || {})) {
+    send("midi", device, "/pitch", parseInt(channel), execFaders[device][channel]);
+  }
+  requestAttributeValues();
 }
 
 // LEDs of executor buttons with an attribute mode: off in attribute mode, the executor state otherwise
@@ -214,6 +231,88 @@ function showExecButtonLEDs(device) {
     const midiChannel = note.midiChannel || routing[device].midiChannel || 1;
     midiUtils.sendNoteResponse(routing, device, parseInt(midiNote), value, note.buttonFeedbackMapper, midiChannel);
   }
+}
+
+// In attribute mode, devices with "attributeModeFaders" use their faders like their encoders
+function isAttributeFaderMode(device) {
+  return !!(routing[device].encoderLabels && routing[device].attributeModeFaders);
+}
+
+// Attributes of the attribute encoders, in MIDI CC order; fader n (pitch channel) uses the n-th one
+function getFaderAttributes(device) {
+  const rltvControl = routing[device].rltvControl || {};
+  return Object.keys(rltvControl)
+    .filter((ctrl) => rltvControl[ctrl].attributeMode && "attribute" in rltvControl[ctrl].attributeMode)
+    .map((ctrl) => rltvControl[ctrl].attributeMode.attribute);
+}
+
+// Tells the MA plugin which attribute values to report (of the first selected fixture), "" for none
+function requestAttributeValues() {
+  const device = Object.keys(routing).find(isAttributeFaderMode);
+  const attributes = device ? getFaderAttributes(device).map((attribute) => attribute || "-").join(";") : "";
+  send(ip, oscPort, prefix + "/cmd", {
+    type: "s",
+    value: 'SetGlobalVariable "pamOscAttributes" "' + attributes + '"',
+  });
+}
+
+function getAttributeFaderState(device) {
+  if (!attributeFaders[device]) attributeFaders[device] = { values: {}, touched: {}, releaseTimers: {}, throttles: {} };
+  return attributeFaders[device];
+}
+
+// Moves a fader to the attribute value reported by MA, unless it is being touched;
+// faders without attribute go down, faders whose value MA can't report stay where they are
+function moveAttributeFader(device, channel) {
+  const state = getAttributeFaderState(device);
+  if (state.touched[channel]) return;
+  if (!getFaderAttributes(device)[channel - 1]) {
+    send("midi", device, "/pitch", channel, 0);
+    return;
+  }
+  const percent = parseFloat(state.values[channel]);
+  if (isNaN(percent)) return;
+  send("midi", device, "/pitch", channel, Math.round((percent / 100) * 16380));
+}
+
+function setFaderTouch(device, channel, touched) {
+  const state = getAttributeFaderState(device);
+  clearTimeout(state.releaseTimers[channel]);
+  if (touched) {
+    state.touched[channel] = true;
+    // Touching a fader puts its attribute into the programmer at the current value, like touching it in MA
+    const attribute = isAttributeFaderMode(device) && getFaderAttributes(device)[channel - 1];
+    const percent = parseFloat(state.values[channel]);
+    if (attribute && !isNaN(percent)) {
+      sendAttributeFader(device, channel, attribute, (percent / 100) * 16380);
+    }
+    return;
+  }
+  // Give MA time to report the final value before the motor follows MA again
+  state.releaseTimers[channel] = setTimeout(() => {
+    state.touched[channel] = false;
+    if (isAttributeFaderMode(device)) moveAttributeFader(device, channel);
+  }, 500);
+}
+
+// Sends a fader position as attribute value, at most every 50 ms per fader to not flood the command line
+function sendAttributeFader(device, channel, attribute, value) {
+  const state = getAttributeFaderState(device);
+  const throttle = state.throttles[channel] || (state.throttles[channel] = {});
+  const percent = Math.round(Math.min(Math.max(value / 16380, 0), 1) * 1000) / 10;
+  throttle.pending = 'Attribute "' + attribute + '" At Absolute Percent ' + percent;
+  if (throttle.timer) return;
+
+  const flush = () => {
+    if (!throttle.pending) {
+      throttle.timer = null;
+      return;
+    }
+    send(ip, oscPort, prefix + "/cmd", { type: "s", value: throttle.pending });
+    throttle.pending = null;
+    throttle.timer = setTimeout(flush, 50);
+  };
+  flush();
 }
 
 // Meters show the fader level of their executor. Levels 0-13 light the green and orange LEDs; the red top
@@ -317,6 +416,17 @@ module.exports = {
       }
       if (address === "/pitch") {
         var [channel, value] = args.map((arg) => arg.value);
+        if (isAttributeFaderMode(port)) {
+          const attribute = getFaderAttributes(port)[channel - 1];
+          // Only a hand on the fader changes attributes, never the motor following MA
+          if (attribute && getAttributeFaderState(port).touched[channel]) {
+            sendAttributeFader(port, channel, attribute, value);
+            // The X-Touch returns a released fader to the last position it received, so echo it
+            getAttributeFaderState(port).values[channel] = "" + (value / 16380) * 100;
+            send("midi", port, "/pitch", channel, value);
+          }
+          return;
+        }
         if (!routing[port]["pitch"] || !routing[port]["pitch"][channel]) {
           return;
         }
@@ -331,6 +441,11 @@ module.exports = {
         var config = routing[port]["note"][ctrl] && getActiveConfig(port, routing[port]["note"][ctrl]);
 
         if (!config) {
+          return;
+        }
+
+        if (config.faderTouch) {
+          setFaderTouch(port, config.faderTouch, value > 0);
           return;
         }
 
@@ -472,6 +587,10 @@ module.exports = {
 
         mappingsPitch.forEach((mapping) => {
           const valueMapped = Math.round((args[0].value / 127) * 16380);
+          if (!execFaders[mapping.device]) execFaders[mapping.device] = {};
+          execFaders[mapping.device][mapping.midiId] = valueMapped;
+          // In attribute mode the faders show attribute values; they return here when leaving it
+          if (isAttributeFaderMode(mapping.device)) return;
           send("midi", mapping.device, "/pitch", mapping.midiId, valueMapped);
         });
 
@@ -496,6 +615,16 @@ module.exports = {
           const value = mapping.permanentFeedback || args[0].value;
           midiUtils.sendNoteResponse(routing, mapping.device, mapping.midiId, value, mapping.buttonFeedbackMapper, mapping.midiChannel);
         });
+      }
+      if (address === "/Attributes") {
+        const values = ("" + args[0].value).split(";");
+        for (let device of Object.keys(routing)) {
+          if (!isAttributeFaderMode(device)) continue;
+          values.forEach((value, i) => {
+            getAttributeFaderState(device).values[i + 1] = value;
+            moveAttributeFader(device, i + 1);
+          });
+        }
       }
       if (address?.includes("/updatePage/current")) {
         page = "" + args[0].value;

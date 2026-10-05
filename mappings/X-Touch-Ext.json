@@ -3,6 +3,7 @@
     "mcDeviceId": "15",
     "buttonFeedbackMapper": "function(value) { if (value == 'On') { return 127;} if (value == 'Off'){ return 0;} return 0; }",
     "enableTimecodeSend": false,
+    "attributeModeFaders": true,
     "pitch": {
         "1": 201,
         "2": 202,
@@ -476,6 +477,30 @@
             "attributeMode": {
                 "exec": null
             }
+        },
+        "104": {
+            "faderTouch": 1
+        },
+        "105": {
+            "faderTouch": 2
+        },
+        "106": {
+            "faderTouch": 3
+        },
+        "107": {
+            "faderTouch": 4
+        },
+        "108": {
+            "faderTouch": 5
+        },
+        "109": {
+            "faderTouch": 6
+        },
+        "110": {
+            "faderTouch": 7
+        },
+        "111": {
+            "faderTouch": 8
         }
     },
     "display": {

@@ -22,6 +22,7 @@ local olsMasterEnabledValue = {
     blind = false
 }
 local oldTimecodes = {}
+local oldAttributeValues = ""
 local oldDeskLockedStatus = 0
 
 local oscEntry = 2
@@ -96,6 +97,47 @@ local function getName(sequence)
         return sequence["NAME"] .. ";" .. sequence["CUENAME"]
     end
     return sequence["NAME"] .. ";"
+end
+
+-- Value of an attribute of a fixture in percent of its range, or "-" if it has none: the programmer value,
+-- else the default of the fixture type. Uses the first step of the programmer phaser (GetProgPhaser is undocumented).
+local function getAttributeValue(fixtureIndex, attributeName)
+    local attributeIndex = GetAttributeIndex(attributeName)
+    if attributeIndex == nil then
+        return "-"
+    end
+    local uiChannelIndex = GetUIChannelIndex(fixtureIndex, attributeIndex)
+    if uiChannelIndex == nil then
+        return "-"
+    end
+
+    local ok, phaser = pcall(GetProgPhaser, uiChannelIndex, false)
+    if ok and type(phaser) == "table" and (phaser.mask_active_value or 0) ~= 0 and type(phaser[1]) == "table" and
+        type(phaser[1].absolute) == "number" then
+        return string.format("%.1f", phaser[1].absolute)
+    end
+
+    -- Not in the programmer: the default value of the DMX channel (24 bit)
+    for _, rtIndex in ipairs(GetRTChannels(fixtureIndex) or {}) do
+        local rtChannel = GetRTChannel(rtIndex)
+        if rtChannel ~= nil and rtChannel["ui_index_first"] == uiChannelIndex then
+            local default = rtChannel["dmx_default"]
+            if type(default) == "number" and default >= 0 and default <= 0xFFFFFF then
+                return string.format("%.1f", default / 0xFFFFFF * 100)
+            end
+        end
+    end
+    return "-"
+end
+
+-- Values of the attributes (separated by ";") of the first selected fixture, separated by ";"
+local function getAttributeValues(attributeList)
+    local fixtureIndex = SelectionFirst()
+    local values = {}
+    for attributeName in string.gmatch(attributeList, "[^;]+") do
+        values[#values + 1] = fixtureIndex and getAttributeValue(fixtureIndex, attributeName) or "-"
+    end
+    return table.concat(values, ";")
 end
 
 local function getMasterEnabled(masterName)
@@ -278,6 +320,18 @@ local function main()
             end
         end
         
+        -- Send the attribute values the pam-osc module asks for (set with SetGlobalVariable "pamOscAttributes")
+        local attributeList = GetVar(GlobalVars(), "pamOscAttributes") or ""
+        if attributeList ~= "" then
+            local values = getAttributeValues(attributeList)
+            if attributeList .. "|" .. values ~= oldAttributeValues or forceReload then
+                oldAttributeValues = attributeList .. "|" .. values
+                Cmd('SendOSC ' .. oscEntry .. ' "/Attributes,s,' .. values .. '"')
+            end
+        else
+            oldAttributeValues = ""
+        end
+
         forceReload = false
         forceReloadButtons = false
 
