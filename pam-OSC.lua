@@ -382,6 +382,9 @@ local function getFaderToken(executor)
     return "FaderMaster"
 end
 
+-- Whether this copy of the plugin runs; calling it again stops it
+local running = false
+
 local function getMasterEnabled(masterName)
     if MasterPool()['Grand'][masterName]['FADERENABLED'] then
         return true
@@ -391,6 +394,13 @@ local function getMasterEnabled(masterName)
 end
 
 local function main()
+    if running then
+        Printf("stop pam OSC main()")
+        running = false
+        return
+    end
+    running = true
+
     local automaticResendButtons = GetVar(GlobalVars(), "automaticResendButtons") or false
     local sendColors = GetVar(GlobalVars(), "sendColors") or false
     local sendNames = GetVar(GlobalVars(), "sendNames") or false
@@ -410,13 +420,18 @@ local function main()
     local forceReload = true
     local forceReloadButtons = false
 
-    if GetVar(GlobalVars(), "opdateOSC") ~= nil then
-        SetVar(GlobalVars(), "opdateOSC", not GetVar(GlobalVars(), "opdateOSC"))
-    else
-        SetVar(GlobalVars(), "opdateOSC", true)
-    end
+    -- A newer copy of the plugin (e.g. after importing it again) stops older ones: each start raises the generation,
+    -- and a copy stops when it sees a higher one. Copies from before checked "opdateOSC" instead.
+    local generation = (tonumber(GetVar(GlobalVars(), "pamOscGeneration")) or 0) + 1
+    SetVar(GlobalVars(), "pamOscGeneration", generation)
+    SetVar(GlobalVars(), "opdateOSC", false)
 
-    while (GetVar(GlobalVars(), "opdateOSC")) do
+    while running do
+        if (tonumber(GetVar(GlobalVars(), "pamOscGeneration")) or 0) > generation then
+            Printf("pam-osc: a newer copy of the plugin started, stopping this one")
+            break
+        end
+
         oscTick = oscTick + 1
         if oscTick >= 10 then
             oscTick = 0
@@ -661,7 +676,7 @@ local function main()
         -- delay
         coroutine.yield(tick)
     end
-
+    running = false
 end
 
 
