@@ -287,7 +287,7 @@ module.exports = {
         });
 
         mappingsRltvCtrl.forEach((mapping) => {
-          const value = utils.mapValue(args[0].value, 0, 127, mapping.from, mapping.to);
+          const value = Math.round(utils.mapValue(args[0].value, 0, 127, mapping.from, mapping.to));
           routing[mapping.device].rltvControl[mapping.id].currValue = args[0].value;
           send("midi", mapping.device, "/control", 1, mapping.midiId, value);
         });
