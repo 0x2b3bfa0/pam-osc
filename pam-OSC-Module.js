@@ -317,6 +317,28 @@ function sendAttributeFader(device, channel, attribute, value) {
   flush();
 }
 
+// OSC can't press an executor key together with the MA key, so this MA command (Lua) does what the
+// executor's "MA Key" settings say: its press/unpress function or custom command. Held functions without an
+// unpress setting (Flash, Temp, Swop) are switched off on release.
+function getMaKeyCommand(page, exec, pressed) {
+  const target = " Page " + page + "." + exec;
+  const prefix = pressed ? "MAKEY" : "MAKEYUNPRESS";
+  return (
+    'Lua "' +
+    "local e; for _, x in ipairs(DataPool().Pages[" + page + "]:Children()) do if x.No == " + exec + " then e = x end end; " +
+    "if not e then return end; " +
+    "local function yes(v) return v == true or v == 'Yes' end; " +
+    "if yes(e." + prefix + "USECUSTOMCOMMAND) then " +
+    "local c = e." + prefix + "COMMAND or ''; if c ~= '' then Cmd(c .. (yes(e." + prefix + "ADDEXECUTOR) and '" + target + "' or '')) end; return end; " +
+    (pressed
+      ? "local f = e.MAKEYPRESS or ''; if f ~= '' then Cmd(f .. '" + target + "') end"
+      : "local f = e.MAKEYUNPRESS or ''; if f ~= '' then Cmd(f .. '" + target + "') return end; " +
+        "local held = { Flash = true, Temp = true, Swop = true }; " +
+        "if held[e.MAKEYPRESS] then Cmd(e.MAKEYPRESS .. ' Off" + target + "') end") +
+    '"'
+  );
+}
+
 // Meters show the fader level of their executor. Levels 0-13 light the green and orange LEDs; the red top
 // one is the overload LED, lit at full.
 function updateMeters(exec) {
@@ -542,6 +564,10 @@ module.exports = {
           // The X-Touch switches a lit LED off when its button is pressed, and MA sends no page update
           // if the page is already selected, so restore the page LEDs ourselves
           setTimeout(() => midiUtils.sendPageLED(routing, page), 100);
+        }
+
+        if (config.maKey) {
+          send(ip, oscPort, prefix + "/cmd", { type: "s", value: getMaKeyCommand(page, config.maKey, value > 0) });
         }
 
         if (config.cmd) {
