@@ -148,7 +148,11 @@
         "0": {
             "local": "encoderPage",
             "featureGroup": "Dimmer",
+            "name": "Dimmer",
             "attributes": [
+                "Dimmer"
+            ],
+            "labels": [
                 "Dimmer"
             ],
             "minValue": 100
@@ -156,17 +160,25 @@
         "1": {
             "local": "encoderPage",
             "featureGroup": "Position",
+            "name": "Pos.",
             "attributes": [
                 "Pan",
                 "Tilt",
                 "PanRotate",
                 "TiltRotate"
             ],
+            "labels": [
+                "Pan",
+                "Tilt",
+                "PanRot",
+                "TiltRot"
+            ],
             "minValue": 100
         },
         "2": {
             "local": "encoderPage",
             "featureGroup": "Gobo",
+            "name": "Gobo",
             "attributes": [
                 "Gobo1",
                 "Gobo1_Pos",
@@ -177,11 +189,22 @@
                 "AnimationWheel1",
                 "AnimationWheel1_Pos"
             ],
+            "labels": [
+                "Gobo 1",
+                "G1 Pos",
+                "Gobo 2",
+                "G2 Pos",
+                "Gobo 3",
+                "G3 Pos",
+                "Anim",
+                "AnimPos"
+            ],
             "minValue": 100
         },
         "3": {
             "local": "encoderPage",
             "featureGroup": "Color",
+            "name": "Color",
             "attributes": [
                 "ColorRGB_R",
                 "ColorRGB_G",
@@ -192,11 +215,22 @@
                 "CTO",
                 "Color1"
             ],
+            "labels": [
+                "Red",
+                "Green",
+                "Blue",
+                "White",
+                "Amber",
+                "UV",
+                "CTO",
+                "Wheel"
+            ],
             "minValue": 100
         },
         "4": {
             "local": "encoderPage",
             "featureGroup": "Beam",
+            "name": "Beam",
             "attributes": [
                 "Shutter1",
                 "Iris",
@@ -205,28 +239,46 @@
                 "Frost1",
                 "Effects1"
             ],
+            "labels": [
+                "Shutter",
+                "Iris",
+                "Prism",
+                "PrsmRot",
+                "Frost",
+                "Effects"
+            ],
             "minValue": 100
         },
         "5": {
             "local": "encoderPage",
             "featureGroup": "Focus",
+            "name": "Focus",
             "attributes": [
                 "Zoom",
                 "Focus1",
                 "Focus2",
                 "Focus3"
             ],
+            "labels": [
+                "Zoom",
+                "Focus 1",
+                "Focus 2",
+                "Focus 3"
+            ],
             "minValue": 100
         },
         "6": {
             "local": "encoderPage",
             "featureGroup": "Control",
+            "name": "Control",
             "attributes": [],
+            "labels": [],
             "minValue": 100
         },
         "7": {
             "local": "encoderPage",
             "featureGroup": "Shapers",
+            "name": "Shapers",
             "attributes": [
                 "Blade1A",
                 "Blade1B",
@@ -236,6 +288,16 @@
                 "Blade3B",
                 "Blade4A",
                 "Blade4B"
+            ],
+            "labels": [
+                "Bl. 1A",
+                "Bl. 1B",
+                "Bl. 2A",
+                "Bl. 2B",
+                "Bl. 3A",
+                "Bl. 3B",
+                "Bl. 4A",
+                "Bl. 4B"
             ],
             "minValue": 100
         },

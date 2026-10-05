@@ -19,6 +19,8 @@ var colors = {};
 // Meter levels (0-13) and overload LED states per MIDI device, indexed by strip 0-7
 var meters = {};
 var meterOverloads = {};
+// Sequence and cue names per MIDI device, indexed by display slot 0-7
+var names = {};
 var deskLocked = false;
 // Fader value (0-127) reported by MA per executor
 var execFaderValues = {};
@@ -118,13 +120,66 @@ function setEncoderPage(device, pageNote) {
   routing[device].encoderPage = "" + pageNote;
 }
 
+// Writes both lines (7 characters each) of an LCD
+function sendDisplay(device, slot, upper, lower) {
+  const lines = [
+    [slot * 7, upper],
+    [56 + slot * 7, lower],
+  ];
+  lines.forEach(([offset, text]) => {
+    send(
+      "midi",
+      device,
+      "/sysex",
+      "f0 00 00 66 " + getMcDeviceId(device) + " 12 " + utils.numberIntoHex(offset) + " " +
+        utils.stringToAsciiHex((text + "       ").substring(0, 7)) + "f7"
+    );
+  });
+}
+
+// Sets the LCD background colors, one MC color id ("00" = off ... "07" = white) per slot
+function sendDisplayColors(device, colorIds) {
+  send("midi", device, "/sysex", "F0 00 00 66 " + getMcDeviceId(device) + " 72 " + colorIds.join(" ") + " F7");
+}
+
+// Upper line: the encoder page selected by the button below, lower line: attribute of each encoder
+function showEncoderLabels(device) {
+  const notes = routing[device].note;
+  const pageNotes = Object.keys(notes).filter((note) => notes[note].local == "encoderPage");
+  const page = notes[routing[device].encoderPage];
+  const labels = page.labels || page.attributes || [];
+  for (let slot = 0; slot < 8; slot++) {
+    const pageBelow = notes[pageNotes[slot]] || {};
+    sendDisplay(device, slot, pageBelow.name || "", labels[slot] || "");
+  }
+  sendDisplayColors(device, new Array(8).fill("07"));
+}
+
+function showExecNames(device) {
+  for (let slot = 0; slot < 8; slot++) {
+    const [upper, lower] = (names[device] || [])[slot] || ["", ""];
+    sendDisplay(device, slot, upper, lower);
+  }
+  showExecColors(device);
+}
+
+function showExecColors(device) {
+  if (!colors[device]) return;
+  sendDisplayColors(
+    device,
+    colors[device].map((colorString) => colorUtils.findNearestDisplayColor(colorUtils.parseColorString(colorString)))
+  );
+}
+
 function enterAttributeMode(device, pageNote) {
   setEncoderPage(device, pageNote);
   routing[device].encoderLabels = true;
+  showEncoderLabels(device);
 }
 
 function leaveAttributeMode(device) {
   routing[device].encoderLabels = false;
+  showExecNames(device);
 }
 
 // Meters show the fader level of their executor. Levels 0-13 light the green and orange LEDs; the red top
@@ -424,13 +479,8 @@ module.exports = {
         });
 
         new Set(mappingsDisplay.map((mapping) => mapping.device)).forEach((device) => {
-          var midiCommand = "F0 00 00 66 " + getMcDeviceId(device) + " 72 ";
-          colors[device].forEach((colorString) => {
-            const color = colorUtils.parseColorString(colorString);
-            const displayColor = colorUtils.findNearestDisplayColor(color);
-            midiCommand = midiCommand + displayColor + " ";
-          });
-          send("midi", device, "/sysex", midiCommand + "F7");
+          // Keep the colors for later while the encoder labels are shown
+          if (!routing[device].encoderLabels) showExecColors(device);
         });
       }
 
@@ -439,23 +489,13 @@ module.exports = {
         const values = args[0].value.split(";");
 
         mappingsDisplay.forEach((mapping) => {
-          const seqMidiNote = utils.numberIntoHex(mapping.displayId * 7);
-          const cueMidiNote = utils.numberIntoHex(56 + mapping.displayId * 7);
-          const seq = (values[0] + "       ").substring(0, 7);
-          const cue = (values[1] + "       ").substring(0, 7);
+          if (!names[mapping.device]) names[mapping.device] = [];
+          names[mapping.device][mapping.displayId] = [values[0] || "", values[1] || ""];
 
-          send(
-            "midi",
-            mapping.device,
-            "/sysex",
-            "f0 00 00 66 " + getMcDeviceId(mapping.device) + " 12 " + seqMidiNote + " " + utils.stringToAsciiHex(seq) + "f7"
-          );
-          send( 
-            "midi",
-            mapping.device,
-            "/sysex",
-            "f0 00 00 66 " + getMcDeviceId(mapping.device) + " 12 " + cueMidiNote + " " + utils.stringToAsciiHex(cue) + "f7"
-          );
+          // Keep the names for later while the encoder labels are shown
+          if (!routing[mapping.device].encoderLabels) {
+            sendDisplay(mapping.device, mapping.displayId, values[0] || "", values[1] || "");
+          }
         });
       }
 
