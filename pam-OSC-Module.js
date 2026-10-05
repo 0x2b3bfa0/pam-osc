@@ -83,7 +83,7 @@ settings.read("midi").forEach((deviceMidi) => {
 
 // Start every device on its first encoder page
 for (let device of Object.keys(routing)) {
-  const firstPage = Object.keys(routing[device].note).find((note) => routing[device].note[note].local == "encoderPage");
+  const firstPage = Object.keys(routing[device].note).find((note) => isEncoderPage(routing[device].note[note]));
   if (firstPage) {
     setEncoderPage(device, firstPage);
     midiUtils.sendEncoderPageLED(routing, device);
@@ -115,6 +115,11 @@ setInterval(function () {
     });
   }
 }, 100);
+
+// Encoder page buttons without attributes are disabled
+function isEncoderPage(note) {
+  return note.local == "encoderPage" && (note.attributes || []).length > 0;
+}
 
 // While the encoder labels are shown (attribute mode), a control's "attributeMode" overrides its settings
 function getActiveConfig(device, config) {
@@ -647,7 +652,7 @@ module.exports = {
             showEncoderRings(port);
           }
 
-          if (config.local == "encoderPage") {
+          if (isEncoderPage(config)) {
             if (config.featureGroup) {
               send(ip, oscPort, prefix + "/cmd", { type: "s", value: 'FeatureGroup "' + config.featureGroup + '"' });
             }
@@ -741,7 +746,7 @@ module.exports = {
           if (!routing[device].encoderLabels) continue;
           const notes = routing[device].note;
           const pageNote = Object.keys(notes).find(
-            (note) => notes[note].local == "encoderPage" && ("" + notes[note].featureGroup).toLowerCase() == featureGroup
+            (note) => isEncoderPage(notes[note]) && ("" + notes[note].featureGroup).toLowerCase() == featureGroup
           );
           if (pageNote && pageNote != routing[device].encoderPage) {
             enterAttributeMode(device, pageNote);
