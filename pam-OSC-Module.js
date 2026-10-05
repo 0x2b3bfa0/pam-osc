@@ -228,10 +228,12 @@ function leaveAttributeMode(device) {
   requestAttributeValues();
 }
 
-// LED of an executor button: off while disabled in attribute mode; otherwise, by its "led" setting, whether
-// its key ("keyAssigned") or MA + key ("maKeyAssigned") has a function, or else whether the executor runs
+// LED of an executor button: in attribute mode, lit if it resets an encoder that has an attribute
+// ("attributeDefault"), off if disabled; otherwise, by its "led" setting, whether its key ("keyAssigned") or
+// MA + key ("maKeyAssigned") has a function, or else whether the executor runs
 function getButtonLED(device, note) {
   const active = getActiveConfig(device, note);
+  if (active.attributeDefault) return getFaderAttributes(device)[active.attributeDefault - 1] ? "On" : "Off";
   if (!active.exec && !active.maKey) return "Off";
   if (note.led == "keyAssigned") return keyAssigned[note.exec] ? "On" : "Off";
   if (note.led == "maKeyAssigned") return maKeyAssigned[note.maKey] ? "On" : "Off";
@@ -585,6 +587,14 @@ module.exports = {
           // The X-Touch switches a lit LED off when its button is pressed, and MA sends no page update
           // if the page is already selected, so restore the page LEDs ourselves
           setTimeout(() => midiUtils.sendPageLED(routing, page), 100);
+        }
+
+        // Resets the attribute of encoder n (1-8) of the selected fixtures to its default
+        if (config.attributeDefault) {
+          const attribute = getFaderAttributes(port)[config.attributeDefault - 1];
+          if (attribute) send(ip, oscPort, prefix + "/cmd", { type: "s", value: 'Attribute "' + attribute + '" At Default' });
+          // The X-Touch switches a lit LED off when its button is pressed
+          setTimeout(() => sendButtonLED(port, ctrl), 100);
         }
 
         if (config.maKey) {

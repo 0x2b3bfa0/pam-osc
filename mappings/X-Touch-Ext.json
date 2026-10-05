@@ -338,56 +338,72 @@
             "maKey": 201,
             "led": "maKeyAssigned",
             "attributeMode": {
-                "maKey": null
+                "maKey": null,
+                "attributeDefault": 1,
+                "minValue": 100
             }
         },
         "17": {
             "maKey": 202,
             "led": "maKeyAssigned",
             "attributeMode": {
-                "maKey": null
+                "maKey": null,
+                "attributeDefault": 2,
+                "minValue": 100
             }
         },
         "18": {
             "maKey": 203,
             "led": "maKeyAssigned",
             "attributeMode": {
-                "maKey": null
+                "maKey": null,
+                "attributeDefault": 3,
+                "minValue": 100
             }
         },
         "19": {
             "maKey": 204,
             "led": "maKeyAssigned",
             "attributeMode": {
-                "maKey": null
+                "maKey": null,
+                "attributeDefault": 4,
+                "minValue": 100
             }
         },
         "20": {
             "maKey": 205,
             "led": "maKeyAssigned",
             "attributeMode": {
-                "maKey": null
+                "maKey": null,
+                "attributeDefault": 5,
+                "minValue": 100
             }
         },
         "21": {
             "maKey": 206,
             "led": "maKeyAssigned",
             "attributeMode": {
-                "maKey": null
+                "maKey": null,
+                "attributeDefault": 6,
+                "minValue": 100
             }
         },
         "22": {
             "maKey": 207,
             "led": "maKeyAssigned",
             "attributeMode": {
-                "maKey": null
+                "maKey": null,
+                "attributeDefault": 7,
+                "minValue": 100
             }
         },
         "23": {
             "maKey": 208,
             "led": "maKeyAssigned",
             "attributeMode": {
-                "maKey": null
+                "maKey": null,
+                "attributeDefault": 8,
+                "minValue": 100
             }
         },
         "24": {
