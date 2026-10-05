@@ -625,6 +625,12 @@ module.exports = {
           });
         }
 
+        // The X-Touch switches a lit LED off when its button is pressed; restore executor button LEDs ourselves,
+        // so MA doesn't have to resend all buttons ("Automatic Resend Buttons")
+        if ((config.exec || config.maKey) && value > 0) {
+          setTimeout(() => sendButtonLED(port, ctrl), 100);
+        }
+
         if (config.quicKey) {
           send(ip, oscPort, prefix + "/cmd", {
             type: "s",
