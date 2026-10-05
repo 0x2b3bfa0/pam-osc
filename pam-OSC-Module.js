@@ -174,7 +174,8 @@ function sendDisplayColors(device, colorIds) {
   send("midi", device, "/sysex", "F0 00 00 66 " + getMcDeviceId(device) + " 72 " + colorIds.join(" ") + " F7");
 }
 
-// Upper line: the encoder page selected by the button below, lower line: attribute of each encoder
+// Upper line: the encoder page selected by the button below, lower line: attribute of each encoder. Yellow
+// where the encoder has an attribute, white otherwise.
 function showEncoderLabels(device) {
   const notes = routing[device].note;
   const pageNotes = Object.keys(notes).filter((note) => notes[note].local == "encoderPage");
@@ -184,7 +185,11 @@ function showEncoderLabels(device) {
     const pageBelow = notes[pageNotes[slot]] || {};
     sendDisplay(device, slot, pageBelow.name || "", labels[slot] || "");
   }
-  sendDisplayColors(device, new Array(8).fill("07"));
+  const attributes = page.attributes || [];
+  sendDisplayColors(
+    device,
+    Array.from({ length: 8 }, (_, slot) => (attributes[slot] ? "03" : "07"))
+  );
 }
 
 function showExecNames(device) {
