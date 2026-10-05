@@ -26,6 +26,8 @@ var execFaders = {};
 // Attribute fader state per MIDI device: last values (percent or "-") from MA and touched faders, by pitch channel
 var attributeFaders = {};
 var deskLocked = false;
+// Whether a command is being typed in MA's command line (reported by the MA plugin)
+var cmdLineActive = false;
 // Last button state ("On"/"Off") and fader value (0-127) reported by MA per executor
 var buttonStates = {};
 var execFaderValues = {};
@@ -505,7 +507,14 @@ module.exports = {
           }
         }
 
-        if (config.exec) {
+        // While a command is typed in MA, executor key presses complete it like console keys do (through the MA
+        // plugin); releases always go to the executor, so a key held while typing doesn't stay flashed
+        if (config.exec && cmdLineActive && value > 0) {
+          send(ip, oscPort, prefix + "/cmd", {
+            type: "s",
+            value: 'SetGlobalVariable "pamOscKey" "' + page + "." + config.exec + '"',
+          });
+        } else if (config.exec) {
           send(ip, oscPort, prefix + "/Page" + page + "/Key" + config.exec, {
             type: "i",
             value: value,
@@ -615,6 +624,9 @@ module.exports = {
           const value = mapping.permanentFeedback || args[0].value;
           midiUtils.sendNoteResponse(routing, mapping.device, mapping.midiId, value, mapping.buttonFeedbackMapper, mapping.midiChannel);
         });
+      }
+      if (address === "/CmdLine") {
+        cmdLineActive = args[0].value == 1;
       }
       // MA reports the selected feature group: follow it with the encoder pages of devices in attribute mode
       if (address === "/FeatureGroup") {

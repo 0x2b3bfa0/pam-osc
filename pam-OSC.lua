@@ -24,6 +24,7 @@ local olsMasterEnabledValue = {
 local oldTimecodes = {}
 local oldAttributeValues = ""
 local oldFeatureGroup = ""
+local oldCmdLineActive = nil
 local oldDeskLockedStatus = 0
 
 local oscEntry = 2
@@ -147,6 +148,28 @@ local function getSelectedFeatureGroup()
         return SelectedFeature():Parent().name
     end)
     return ok and name or ""
+end
+
+-- Text typed in the command line, without surrounding spaces
+local function getCmdText()
+    local ok, text = pcall(function()
+        return CmdObj().cmdtext
+    end)
+    if not ok or type(text) ~= "string" then
+        return ""
+    end
+    return (text:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+-- Clears the command line by pressing Esc in it: plugins can't edit its text directly
+local function clearCmdLine()
+    pcall(function()
+        FindBestFocus(GetDisplayByIndex(1).CmdLineSection)
+    end)
+    pcall(function()
+        Keyboard(1, "press", "Escape")
+        Keyboard(1, "release", "Escape")
+    end)
 end
 
 local function getMasterEnabled(masterName)
@@ -329,6 +352,23 @@ local function main()
             end
         end
         
+        -- Tell the module whether a command is being typed, so it sends executor keys here instead of to the
+        -- playback; complete the command with such a key (set with SetGlobalVariable "pamOscKey" "page.exec")
+        local cmdText = getCmdText()
+        local cmdLineActive = cmdText ~= ""
+        if cmdLineActive ~= oldCmdLineActive or forceReload then
+            oldCmdLineActive = cmdLineActive
+            Cmd('SendOSC ' .. oscEntry .. ' "/CmdLine,i,' .. (cmdLineActive and 1 or 0) .. '"')
+        end
+        local key = GetVar(GlobalVars(), "pamOscKey") or ""
+        if key ~= "" then
+            SetVar(GlobalVars(), "pamOscKey", "")
+            if cmdLineActive then
+                clearCmdLine()
+                Cmd(cmdText .. " Page " .. key)
+            end
+        end
+
         -- Send the selected feature group
         local featureGroup = getSelectedFeatureGroup()
         if featureGroup ~= "" and (featureGroup ~= oldFeatureGroup or forceReload) then
