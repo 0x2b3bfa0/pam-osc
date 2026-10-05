@@ -15,6 +15,8 @@ local oldValues = {}
 local oldButtonValues = {}
 local oldColorValues = {}
 local oldNameValues = {}
+local oldKeyAssigned = {}
+local oldMaKeyAssigned = {}
 local olsMasterEnabledValue = {
     highlight = false,
     lowlight = false,
@@ -172,6 +174,18 @@ local function clearCmdLine()
     end)
 end
 
+-- Whether an executor's key (prefix "KEY") or MA + key (prefix "MAKEY") has a function or custom command
+local function isKeyAssigned(executor, prefix)
+    local ok, assigned = pcall(function()
+        local custom = executor[prefix .. "USECUSTOMCOMMAND"]
+        if custom == true or custom == "Yes" then
+            return (executor[prefix .. "COMMAND"] or "") ~= ""
+        end
+        return (executor[prefix .. "PRESS"] or "") ~= ""
+    end)
+    return ok and assigned or false
+end
+
 local function getMasterEnabled(masterName)
     if MasterPool()['Grand'][masterName]['FADERENABLED'] then
         return true
@@ -274,11 +288,15 @@ local function main()
             local buttonValue = false
             local colorValue = "0,0,0,0"
             local nameValue = ";"
+            local keyAssigned = false
+            local maKeyAssigned = false
             local isFlash = false
 
             -- Set Fader & button Values
             for maKey, maValue in pairs(executors) do
                 if maValue.No == listValue then
+                    keyAssigned = isKeyAssigned(maValue, "KEY")
+                    maKeyAssigned = isKeyAssigned(maValue, "MAKEY")
                     local faderOptions = {}
                     faderOptions.value = faderEnd
                     faderOptions.token = "FaderMaster"
@@ -327,6 +345,18 @@ local function main()
                 local newValue = string.gsub(colorValue, ",", ";")
                 Cmd('SendOSC ' .. oscEntry .. '  "/Page' .. destPage .. '/Color' .. listValue .. ',s,' .. newValue ..
                         '"')
+            end
+
+            -- Send whether the key and MA + key have a function
+            if oldKeyAssigned[listKey] ~= keyAssigned or forceReload then
+                oldKeyAssigned[listKey] = keyAssigned
+                Cmd('SendOSC ' .. oscEntry .. ' "/Page' .. destPage .. '/KeyFn' .. listValue .. ',i,' ..
+                        (keyAssigned and 1 or 0) .. '"')
+            end
+            if oldMaKeyAssigned[listKey] ~= maKeyAssigned or forceReload then
+                oldMaKeyAssigned[listKey] = maKeyAssigned
+                Cmd('SendOSC ' .. oscEntry .. ' "/Page' .. destPage .. '/MaKeyFn' .. listValue .. ',i,' ..
+                        (maKeyAssigned and 1 or 0) .. '"')
             end
 
             -- Send Name Value

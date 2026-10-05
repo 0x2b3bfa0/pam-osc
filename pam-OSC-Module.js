@@ -31,6 +31,9 @@ var cmdLineActive = false;
 // Last button state ("On"/"Off") and fader value (0-127) reported by MA per executor
 var buttonStates = {};
 var execFaderValues = {};
+// Whether the key and the MA + key of an executor have a function (reported by the MA plugin), per executor
+var keyAssigned = {};
+var maKeyAssigned = {};
 
 const utils = require("./utils.js");
 const colorUtils = require("./colorUtils.js");
@@ -222,16 +225,27 @@ function leaveAttributeMode(device) {
   requestAttributeValues();
 }
 
-// LEDs of executor buttons with an attribute mode: off in attribute mode, the executor state otherwise
+// LED of an executor button: off while disabled in attribute mode; otherwise, by its "led" setting, whether
+// its key ("keyAssigned") or MA + key ("maKeyAssigned") has a function, or else whether the executor runs
+function getButtonLED(device, note) {
+  const active = getActiveConfig(device, note);
+  if (!active.exec && !active.maKey) return "Off";
+  if (note.led == "keyAssigned") return keyAssigned[note.exec] ? "On" : "Off";
+  if (note.led == "maKeyAssigned") return maKeyAssigned[note.maKey] ? "On" : "Off";
+  return note.permanentFeedback || buttonStates[note.exec] || "Off";
+}
+
+function sendButtonLED(device, midiNote) {
+  const note = routing[device].note[midiNote];
+  const midiChannel = note.midiChannel || routing[device].midiChannel || 1;
+  midiUtils.sendNoteResponse(routing, device, parseInt(midiNote), getButtonLED(device, note), note.buttonFeedbackMapper, midiChannel);
+}
+
+// LEDs of executor buttons with an attribute mode, when entering or leaving it
 function showExecButtonLEDs(device) {
   const notes = routing[device].note;
   for (let midiNote of Object.keys(notes)) {
-    const note = notes[midiNote];
-    if (!note.exec || !note.attributeMode) continue;
-    const active = getActiveConfig(device, note).exec;
-    const value = active ? note.permanentFeedback || buttonStates[note.exec] || "Off" : "Off";
-    const midiChannel = note.midiChannel || routing[device].midiChannel || 1;
-    midiUtils.sendNoteResponse(routing, device, parseInt(midiNote), value, note.buttonFeedbackMapper, midiChannel);
+    if ((notes[midiNote].exec || notes[midiNote].maKey) && notes[midiNote].attributeMode) sendButtonLED(device, midiNote);
   }
 }
 
@@ -645,11 +659,30 @@ module.exports = {
         buttonStates[fader] = args[0].value;
         const mappings = routingUtils.getRoutingNoteByExecId(routing, fader);
         mappings.forEach((mapping) => {
-          // Executor buttons with an attribute mode stay dark in it; their state is restored when leaving it
+          // Executor buttons with an attribute mode stay dark in it; their state is restored when leaving it.
+          // Buttons with an "led" setting work out their LED themselves.
+          if (mapping.led) {
+            sendButtonLED(mapping.device, mapping.midiId);
+            return;
+          }
           if (mapping.attributeMode && !getActiveConfig(mapping.device, mapping).exec) return;
           const value = mapping.permanentFeedback || args[0].value;
           midiUtils.sendNoteResponse(routing, mapping.device, mapping.midiId, value, mapping.buttonFeedbackMapper, mapping.midiChannel);
         });
+      }
+      if (addressSplit[2]?.startsWith("KeyFn") || addressSplit[2]?.startsWith("MaKeyFn")) {
+        const ma = addressSplit[2].startsWith("MaKeyFn");
+        (ma ? maKeyAssigned : keyAssigned)[fader] = args[0].value == 1;
+        for (let device of Object.keys(routing)) {
+          const notes = routing[device].note;
+          for (let midiNote of Object.keys(notes)) {
+            const note = notes[midiNote];
+            const matches = ma
+              ? note.led == "maKeyAssigned" && "" + note.maKey == fader
+              : note.led == "keyAssigned" && "" + note.exec == fader;
+            if (matches) sendButtonLED(device, midiNote);
+          }
+        }
       }
       if (address === "/CmdLine") {
         cmdLineActive = args[0].value == 1;

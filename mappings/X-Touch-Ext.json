@@ -336,96 +336,112 @@
         },
         "16": {
             "maKey": 201,
+            "led": "maKeyAssigned",
             "attributeMode": {
                 "maKey": null
             }
         },
         "17": {
             "maKey": 202,
+            "led": "maKeyAssigned",
             "attributeMode": {
                 "maKey": null
             }
         },
         "18": {
             "maKey": 203,
+            "led": "maKeyAssigned",
             "attributeMode": {
                 "maKey": null
             }
         },
         "19": {
             "maKey": 204,
+            "led": "maKeyAssigned",
             "attributeMode": {
                 "maKey": null
             }
         },
         "20": {
             "maKey": 205,
+            "led": "maKeyAssigned",
             "attributeMode": {
                 "maKey": null
             }
         },
         "21": {
             "maKey": 206,
+            "led": "maKeyAssigned",
             "attributeMode": {
                 "maKey": null
             }
         },
         "22": {
             "maKey": 207,
+            "led": "maKeyAssigned",
             "attributeMode": {
                 "maKey": null
             }
         },
         "23": {
             "maKey": 208,
+            "led": "maKeyAssigned",
             "attributeMode": {
                 "maKey": null
             }
         },
         "24": {
             "exec": 201,
+            "led": "keyAssigned",
             "attributeMode": {
                 "exec": null
             }
         },
         "25": {
             "exec": 202,
+            "led": "keyAssigned",
             "attributeMode": {
                 "exec": null
             }
         },
         "26": {
             "exec": 203,
+            "led": "keyAssigned",
             "attributeMode": {
                 "exec": null
             }
         },
         "27": {
             "exec": 204,
+            "led": "keyAssigned",
             "attributeMode": {
                 "exec": null
             }
         },
         "28": {
             "exec": 205,
+            "led": "keyAssigned",
             "attributeMode": {
                 "exec": null
             }
         },
         "29": {
             "exec": 206,
+            "led": "keyAssigned",
             "attributeMode": {
                 "exec": null
             }
         },
         "30": {
             "exec": 207,
+            "led": "keyAssigned",
             "attributeMode": {
                 "exec": null
             }
         },
         "31": {
             "exec": 208,
+            "led": "keyAssigned",
             "attributeMode": {
                 "exec": null
             }
