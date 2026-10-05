@@ -294,22 +294,29 @@ end
 -- OSC goes over UDP with Lua's socket library to the destination of the OSC entry, so it doesn't fill MA's command
 -- line history. Without the library or a UDP entry, it falls back to SendOSC commands.
 local osc = nil
+local oscUdp = nil
+local oscDescription = nil
 
-local function openOSC()
-    osc = nil
+-- Reads the OSC entry's destination; called regularly, so changes in MA's network settings apply right away
+local function updateOSC()
     local ok, result = pcall(function()
         local entry = ShowData().OSCBase[oscEntry]
-        if entry.MODE ~= "UDP" then
+        if entry.MODE ~= "UDP" or not string.pack then
             return nil
         end
-        local udp = require("socket").udp()
-        udp:setoption("broadcast", true)
-        return { udp = udp, ip = entry.DESTINATIONIP, port = tonumber(entry.PORT), prefix = entry.PREFIX or "" }
+        if not oscUdp then
+            oscUdp = require("socket").udp()
+            oscUdp:setoption("broadcast", true)
+        end
+        return { udp = oscUdp, ip = entry.DESTINATIONIP, port = tonumber(entry.PORT), prefix = entry.PREFIX or "" }
     end)
-    if ok and result and result.ip and result.port and string.pack then
-        osc = result
+    osc = (ok and result and result.ip and result.port) and result or nil
+
+    local description = osc and ("directly to " .. osc.ip .. ":" .. osc.port) or "with SendOSC commands"
+    if description ~= oscDescription then
+        oscDescription = description
+        Printf("pam-osc: sending OSC " .. description)
     end
-    Printf("pam-osc: sending OSC " .. (osc and ("directly to " .. osc.ip .. ":" .. osc.port) or "with SendOSC commands"))
 end
 
 -- OSC string: null terminated, padded to 4 bytes
@@ -356,7 +363,8 @@ local function main()
     local fixedPageNr = GetVar(GlobalVars(), "fixedPageNr") or 0
 
     Printf("start pam OSC main()")
-    openOSC()
+    updateOSC()
+    local oscTick = 0
     Printf("automaticResendButtons: " .. (automaticResendButtons and "true" or "false"))
     Printf("sendColors: " .. (sendColors and "true" or "false"))
     Printf("sendNames: " .. (sendNames and "true" or "false"))
@@ -374,6 +382,12 @@ local function main()
     end
 
     while (GetVar(GlobalVars(), "opdateOSC")) do
+        oscTick = oscTick + 1
+        if oscTick >= 10 then
+            oscTick = 0
+            updateOSC()
+        end
+
         local currentDeskLocked = DeskLocked()
         if currentDeskLocked ~= oldDeskLockedStatus then
             oldDeskLockedStatus = currentDeskLocked
