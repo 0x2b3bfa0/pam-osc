@@ -493,8 +493,9 @@ local function main()
         -- groups of pages that take them from MA ("pamOscGroupAttributes"). Lists start with ";" as they may be empty.
         local pageAttributes = GetVar(GlobalVars(), "pamOscPageAttributes") or ""
         local groupAttributes = GetVar(GlobalVars(), "pamOscGroupAttributes") or ""
-        local selectionKey = pageAttributes .. "|" .. groupAttributes .. "|" .. tostring(SelectionCount()) .. "|" ..
-                                 tostring(SelectionFirst())
+        -- The extra parentheses turn "no value" (returned without a selection) into nil for tostring
+        local selectionKey = pageAttributes .. "|" .. groupAttributes .. "|" .. tostring((SelectionCount())) .. "|" ..
+                                 tostring((SelectionFirst()))
         if selectionKey ~= oldSelectionKey or forceReload then
             oldSelectionKey = selectionKey
             if pageAttributes ~= "" then
