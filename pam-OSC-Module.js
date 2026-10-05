@@ -132,17 +132,20 @@ function setEncoderPage(device, pageNote) {
   routing[device].encoderPage = "" + pageNote;
 }
 
-// MC LED ring value in spread mode (0x30 + width 1-6, lighting 1, 3, 5 ... 11 LEDs from the top center): all LEDs
+// MC LED ring values: spread mode (0x30 + width 1-6) with all LEDs, and fill mode (0x20 + 1-11 LEDs from the
+// left) with the first half
 const RING_ATTRIBUTE = 0x36;
+const RING_ATTRIBUTE_FINER = 0x26;
 
-// LED rings of encoders with an attribute mode: lit if they have an attribute in attribute mode, the executor level otherwise
+// LED rings of encoders with an attribute mode: in attribute mode lit if they have an attribute (the first
+// half only in finer mode), the executor level otherwise
 function showEncoderRings(device) {
   const rltvControl = routing[device].rltvControl || {};
   for (let ctrl of Object.keys(rltvControl)) {
     const { attributeMode, returnChannel, returnFrom, returnTo, currValue } = rltvControl[ctrl];
     if (!attributeMode || !returnChannel) continue;
     const value = routing[device].encoderLabels
-      ? attributeMode.attribute ? RING_ATTRIBUTE : 0
+      ? attributeMode.attribute ? (routing[device].encoderFiner ? RING_ATTRIBUTE_FINER : RING_ATTRIBUTE) : 0
       : Math.round(utils.mapValue(currValue || 0, 0, 127, returnFrom, returnTo));
     send("midi", device, "/control", 1, returnChannel, value);
   }
@@ -439,8 +442,8 @@ module.exports = {
           const { attribute, posFrom, posTo, negFrom, negTo, amount } = rltvControl;
 
           let change = utils.getRelativeValue(value, posFrom, posTo, negFrom, negTo) * amount;
-          // Devices with encoder pages set their step size with "amount" and ignore the fine button
-          const fine = !routing[port].encoderPage && encoderFine;
+          // Devices with encoder pages set their step size with "amount" and have their own finer mode
+          const fine = routing[port].encoderPage ? routing[port].encoderFiner : encoderFine;
           change = fine ? change / 10 : change;
           change = encoderRough ? change * 10 : change;
           change = Math.round(change * 1000) / 1000;
@@ -599,6 +602,12 @@ module.exports = {
           if (config.local == "encoderFine") {
             encoderFine = !encoderFine;
             midiUtils.sendNoteResponse(routing, port, ctrl, encoderFine ? "On" : "Off", null, 1);
+          }
+
+          // Toggles the device's attribute encoders between their "amount" and a tenth of it
+          if (config.local == "encoderFiner") {
+            routing[port].encoderFiner = !routing[port].encoderFiner;
+            showEncoderRings(port);
           }
 
           if (config.local == "encoderPage") {
