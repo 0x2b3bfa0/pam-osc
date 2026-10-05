@@ -22,7 +22,8 @@ var meterOverloads = {};
 // Sequence and cue names per MIDI device, indexed by display slot 0-7
 var names = {};
 var deskLocked = false;
-// Fader value (0-127) reported by MA per executor
+// Last button state ("On"/"Off") and fader value (0-127) reported by MA per executor
+var buttonStates = {};
 var execFaderValues = {};
 
 const utils = require("./utils.js");
@@ -192,12 +193,27 @@ function enterAttributeMode(device, pageNote) {
   routing[device].encoderLabels = true;
   showEncoderLabels(device);
   showEncoderRings(device);
+  showExecButtonLEDs(device);
 }
 
 function leaveAttributeMode(device) {
   routing[device].encoderLabels = false;
   showExecNames(device);
   showEncoderRings(device);
+  showExecButtonLEDs(device);
+}
+
+// LEDs of executor buttons with an attribute mode: off in attribute mode, the executor state otherwise
+function showExecButtonLEDs(device) {
+  const notes = routing[device].note;
+  for (let midiNote of Object.keys(notes)) {
+    const note = notes[midiNote];
+    if (!note.exec || !note.attributeMode) continue;
+    const active = getActiveConfig(device, note).exec;
+    const value = active ? note.permanentFeedback || buttonStates[note.exec] || "Off" : "Off";
+    const midiChannel = note.midiChannel || routing[device].midiChannel || 1;
+    midiUtils.sendNoteResponse(routing, device, parseInt(midiNote), value, note.buttonFeedbackMapper, midiChannel);
+  }
 }
 
 // Meters show the fader level of their executor. Levels 0-13 light the green and orange LEDs; the red top
@@ -472,8 +488,11 @@ module.exports = {
         updateMeters(fader);
       }
       if (addressSplit[2]?.includes("Button")) {
+        buttonStates[fader] = args[0].value;
         const mappings = routingUtils.getRoutingNoteByExecId(routing, fader);
         mappings.forEach((mapping) => {
+          // Executor buttons with an attribute mode stay dark in it; their state is restored when leaving it
+          if (mapping.attributeMode && !getActiveConfig(mapping.device, mapping).exec) return;
           const value = mapping.permanentFeedback || args[0].value;
           midiUtils.sendNoteResponse(routing, mapping.device, mapping.midiId, value, mapping.buttonFeedbackMapper, mapping.midiChannel);
         });

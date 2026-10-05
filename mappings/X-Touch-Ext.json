@@ -334,52 +334,100 @@
             "minValue": 100
         },
         "16": {
-            "exec": 201
+            "exec": 201,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "17": {
-            "exec": 202
+            "exec": 202,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "18": {
-            "exec": 203
+            "exec": 203,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "19": {
-            "exec": 204
+            "exec": 204,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "20": {
-            "exec": 205
+            "exec": 205,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "21": {
-            "exec": 206
+            "exec": 206,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "22": {
-            "exec": 207
+            "exec": 207,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "23": {
-            "exec": 208
+            "exec": 208,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "24": {
-            "exec": 101
+            "exec": 101,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "25": {
-            "exec": 102
+            "exec": 102,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "26": {
-            "exec": 103
+            "exec": 103,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "27": {
-            "exec": 104
+            "exec": 104,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "28": {
-            "exec": 105
+            "exec": 105,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "29": {
-            "exec": 106
+            "exec": 106,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "30": {
-            "exec": 107
+            "exec": 107,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "31": {
-            "exec": 108
+            "exec": 108,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "32": {
             "exec": 401,
