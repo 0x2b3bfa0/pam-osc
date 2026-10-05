@@ -353,10 +353,10 @@ function getMaKeyCommand(page, exec, pressed) {
   );
 }
 
-// Meters show the fader level of their executor. Levels 0-13 light the green and orange LEDs; the red top
-// one is the overload LED, lit at full.
+// Meters show the fader level of their executor while it runs, and stay dark while it doesn't. Levels 0-13
+// light the green and orange LEDs; the red top one is the overload LED, lit at full.
 function updateMeters(exec) {
-  const value = execFaderValues[exec] || 0;
+  const value = buttonStates[exec] == "On" ? execFaderValues[exec] || 0 : 0;
   const level = Math.round((value / 127) * 13);
   const overload = value >= 126.5;
   routingUtils.getRoutingByMeterId(routing, exec).forEach((mapping) => {
@@ -657,6 +657,7 @@ module.exports = {
       }
       if (addressSplit[2]?.includes("Button")) {
         buttonStates[fader] = args[0].value;
+        updateMeters(fader);
         const mappings = routingUtils.getRoutingNoteByExecId(routing, fader);
         mappings.forEach((mapping) => {
           // Executor buttons with an attribute mode stay dark in it; their state is restored when leaving it.
