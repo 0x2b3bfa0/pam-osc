@@ -402,6 +402,42 @@ local function decodeOSC(data)
     return address, args
 end
 
+local function clampPercent(value)
+    return math.min(math.max(value, 0), 100)
+end
+
+-- Sets a UI channel's programmer value. With a phaser (several steps), the first step gets the value and the others
+-- move along, so the effect keeps its shape and settings (speed, phase, fade ...).
+local function setChannelValue(uiChannelIndex, value)
+    local ok, phaser = pcall(GetProgPhaser, uiChannelIndex, false)
+    if not ok or type(phaser) ~= "table" or (phaser.mask_active_value or 0) == 0 or type(phaser[1]) ~= "table" or
+        type(phaser[1].absolute) ~= "number" then
+        -- SetProgPhaserValue doesn't change anything; SetProgPhaser does
+        SetProgPhaser(uiChannelIndex, { { absolute = clampPercent(value) } })
+        return
+    end
+
+    local shift = value - phaser[1].absolute
+    local newPhaser = {}
+    for _, key in ipairs({ "abs_preset", "rel_preset", "fade", "delay", "speed", "phase", "measure", "gridpos" }) do
+        newPhaser[key] = phaser[key]
+    end
+    for i, step in ipairs(phaser) do
+        local newStep = {}
+        for key, stepValue in pairs(step) do
+            -- absolute_value is the DMX value of absolute, which changes
+            if key ~= "absolute_value" then
+                newStep[key] = stepValue
+            end
+        end
+        if type(step.absolute) == "number" then
+            newStep.absolute = clampPercent(step.absolute + shift)
+        end
+        newPhaser[i] = newStep
+    end
+    SetProgPhaser(uiChannelIndex, newPhaser)
+end
+
 -- Sets an attribute of all selected fixtures that have it; newValue(fixture, uiChannel) returns percent or nil
 local function setAttribute(attributeName, newValue)
     local attributeIndex = GetAttributeIndex(attributeName)
@@ -414,8 +450,7 @@ local function setAttribute(attributeName, newValue)
         if uiChannelIndex ~= nil then
             local value = newValue(fixtureIndex, uiChannelIndex)
             if value ~= nil then
-                -- SetProgPhaserValue doesn't change anything; SetProgPhaser does (as a single, static step)
-                SetProgPhaser(uiChannelIndex, { { absolute = math.min(math.max(value, 0), 100) } })
+                setChannelValue(uiChannelIndex, value)
             end
         end
         fixtureIndex = SelectionNext(fixtureIndex)
