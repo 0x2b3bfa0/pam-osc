@@ -309,12 +309,6 @@ function setFaderTouch(device, channel, touched) {
   clearTimeout(state.releaseTimers[channel]);
   if (touched) {
     state.touched[channel] = true;
-    // Touching a fader puts its attribute into the programmer at the current value, like touching it in MA
-    const attribute = isAttributeFaderMode(device) && getFaderAttributes(device)[channel - 1];
-    const percent = parseFloat(state.values[channel]);
-    if (attribute && !isNaN(percent)) {
-      sendAttributeFader(device, channel, attribute, (percent / 100) * 16380);
-    }
     return;
   }
   // Give MA time to report the final value before the motor follows MA again
