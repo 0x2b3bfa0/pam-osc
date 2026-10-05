@@ -412,6 +412,10 @@ module.exports = {
           return;
         }
         const rltvControl = routing[port]["rltvControl"][ctrl] && getActiveConfig(port, routing[port]["rltvControl"][ctrl]);
+        // Values outside the encoder's ranges aren't turns: ignore them instead of moving the value to 0
+        if (rltvControl && !utils.getRelativeValue(value, rltvControl.posFrom, rltvControl.posTo, rltvControl.negFrom, rltvControl.negTo)) {
+          return;
+        }
 
         // handle relative Rotary encoders to act as Absolute
         if (rltvControl && rltvControl.exec) {
