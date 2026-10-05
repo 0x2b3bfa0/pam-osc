@@ -78,6 +78,11 @@ setTimeout(function () {
   oscUtils.triggerForceReload(ip, oscPort, prefix);
 }, 500);
 
+// Mackie Control SysEx device ID: 14 = X-Touch, 15 = X-Touch Extender
+function getMcDeviceId(device) {
+  return routing[device].mcDeviceId || "14";
+}
+
 module.exports = {
   oscInFilter: function (data) {
     var { address, args, host, port } = data;
@@ -318,7 +323,7 @@ module.exports = {
         if (!displayDevice) {
           return;
         }
-        var midiCommand = "F0 00 00 66 14 72";
+        var midiCommand = "F0 00 00 66 " + getMcDeviceId(displayDevice) + " 72";
         colors.forEach((colorString) => {
           const color = colorUtils.parseColorString(colorString);
           const displayColor = colorUtils.findNearestDisplayColor(color);
@@ -341,13 +346,13 @@ module.exports = {
             "midi",
             mapping.device,
             "/sysex",
-            "f0 00 00 66 14 12 " + seqMidiNote + " " + utils.stringToAsciiHex(seq) + "f7"
+            "f0 00 00 66 " + getMcDeviceId(mapping.device) + " 12 " + seqMidiNote + " " + utils.stringToAsciiHex(seq) + "f7"
           );
           send( 
             "midi",
             mapping.device,
             "/sysex",
-            "f0 00 00 66 14 12 " + cueMidiNote + " " + utils.stringToAsciiHex(cue) + "f7"
+            "f0 00 00 66 " + getMcDeviceId(mapping.device) + " 12 " + cueMidiNote + " " + utils.stringToAsciiHex(cue) + "f7"
           );
         });
       }
