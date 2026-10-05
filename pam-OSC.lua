@@ -406,36 +406,93 @@ local function clampPercent(value)
     return math.min(math.max(value, 0), 100)
 end
 
+-- Copy of a UI channel's programmer phaser that SetProgPhaser accepts, or nil if it isn't in the programmer
+local function copyPhaser(uiChannelIndex)
+    local ok, phaser = pcall(GetProgPhaser, uiChannelIndex, false)
+    if not ok or type(phaser) ~= "table" or (phaser.mask_active_value or 0) == 0 or type(phaser[1]) ~= "table" then
+        return nil
+    end
+    local copy = {}
+    for _, key in ipairs({ "abs_preset", "rel_preset", "fade", "delay", "speed", "phase", "measure", "gridpos" }) do
+        copy[key] = phaser[key]
+    end
+    for i, step in ipairs(phaser) do
+        copy[i] = {}
+        for key, value in pairs(step) do
+            -- absolute_value is the DMX value of absolute, which may change
+            if key ~= "absolute_value" then
+                copy[i][key] = value
+            end
+        end
+    end
+    return copy
+end
+
 -- Sets a UI channel's programmer value. With a phaser (several steps), the first step gets the value and the others
 -- move along, so the effect keeps its shape and settings (speed, phase, fade ...).
 local function setChannelValue(uiChannelIndex, value)
-    local ok, phaser = pcall(GetProgPhaser, uiChannelIndex, false)
-    if not ok or type(phaser) ~= "table" or (phaser.mask_active_value or 0) == 0 or type(phaser[1]) ~= "table" or
-        type(phaser[1].absolute) ~= "number" then
+    local phaser = copyPhaser(uiChannelIndex)
+    if not phaser or type(phaser[1].absolute) ~= "number" then
         -- SetProgPhaserValue doesn't change anything; SetProgPhaser does
         SetProgPhaser(uiChannelIndex, { { absolute = clampPercent(value) } })
         return
     end
-
     local shift = value - phaser[1].absolute
-    local newPhaser = {}
-    for _, key in ipairs({ "abs_preset", "rel_preset", "fade", "delay", "speed", "phase", "measure", "gridpos" }) do
-        newPhaser[key] = phaser[key]
-    end
-    for i, step in ipairs(phaser) do
-        local newStep = {}
-        for key, stepValue in pairs(step) do
-            -- absolute_value is the DMX value of absolute, which changes
-            if key ~= "absolute_value" then
-                newStep[key] = stepValue
-            end
-        end
+    for _, step in ipairs(phaser) do
         if type(step.absolute) == "number" then
-            newStep.absolute = clampPercent(step.absolute + shift)
+            step.absolute = clampPercent(step.absolute + shift)
         end
-        newPhaser[i] = newStep
     end
-    SetProgPhaser(uiChannelIndex, newPhaser)
+    SetProgPhaser(uiChannelIndex, phaser)
+end
+
+-- Encoder bar layers (the user profile's ProgrammingLayer) and what they change: a value of every step, or a
+-- setting of the phaser, with its range, value when unset, and how much a step of the module's encoders changes it
+local stepLayers = {
+    Absolute = { field = "absolute", min = 0, max = 100 },
+    Relative = { field = "relative", min = -100, max = 100 },
+    Width = { field = "width", min = 0, max = 100, default = 100 },
+    Accel = { field = "accel", min = 0, max = 100 },
+    Decel = { field = "decel", min = 0, max = 100 },
+    Transition = { field = "trans", min = 0, max = 100 },
+}
+local phaserLayers = {
+    Fade = { field = "fade", min = 0 },
+    Delay = { field = "delay", min = 0 },
+    Speed = { field = "speed", min = 0 },
+    Phase = { field = "phase", scale = 10 },
+    Measure = { field = "measure", min = 0, max = 100 },
+}
+
+local function getProgrammingLayer()
+    local ok, layer = pcall(function()
+        return CurrentProfile().PROGRAMMINGLAYER
+    end)
+    return ok and tostring(layer) or "Absolute"
+end
+
+local function limit(value, layer)
+    return math.min(math.max(value, layer.min or -math.huge), layer.max or math.huge)
+end
+
+-- Changes a UI channel by an encoder step, in the encoder bar's layer like MA's encoders: all steps of a phaser
+-- together, or one of its settings
+local function changeChannel(fixtureIndex, uiChannelIndex, delta, defaultValue)
+    local name = getProgrammingLayer()
+    local phaser = copyPhaser(uiChannelIndex) or { { absolute = defaultValue } }
+    if stepLayers[name] then
+        local layer = stepLayers[name]
+        for _, step in ipairs(phaser) do
+            local current = step[layer.field] or (layer.field == "absolute" and defaultValue) or layer.default or 0
+            step[layer.field] = limit(current + delta, layer)
+        end
+    elseif phaserLayers[name] then
+        local layer = phaserLayers[name]
+        phaser[layer.field] = limit((phaser[layer.field] or 0) + delta * (layer.scale or 1), layer)
+    else
+        return
+    end
+    SetProgPhaser(uiChannelIndex, phaser)
 end
 
 -- Sets an attribute of all selected fixtures that have it; newValue(fixture, uiChannel) returns percent or nil
@@ -471,10 +528,15 @@ local function receiveFromModule()
             local address, args = decodeOSC(data)
             local attribute, value = args[1], tonumber(args[2])
             if address == "/pam/attribute/relative" and value then
-                setAttribute(attribute, function(fixture, channel)
-                    local current = getChannelValue(fixture, channel)
-                    return current and current + value
-                end)
+                local attributeIndex = GetAttributeIndex(attribute)
+                local fixtureIndex = attributeIndex and SelectionFirst()
+                while fixtureIndex ~= nil do
+                    local uiChannelIndex = GetUIChannelIndex(fixtureIndex, attributeIndex)
+                    if uiChannelIndex ~= nil then
+                        changeChannel(fixtureIndex, uiChannelIndex, value, getDefaultValue(fixtureIndex, uiChannelIndex) or 0)
+                    end
+                    fixtureIndex = SelectionNext(fixtureIndex)
+                end
             elseif address == "/pam/attribute/absolute" and value then
                 setAttribute(attribute, function()
                     return value
