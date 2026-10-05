@@ -410,56 +410,72 @@
             "exec": 201,
             "led": "keyAssigned",
             "attributeMode": {
-                "exec": null
+                "exec": null,
+                "attributeActive": 1,
+                "minValue": 100
             }
         },
         "25": {
             "exec": 202,
             "led": "keyAssigned",
             "attributeMode": {
-                "exec": null
+                "exec": null,
+                "attributeActive": 2,
+                "minValue": 100
             }
         },
         "26": {
             "exec": 203,
             "led": "keyAssigned",
             "attributeMode": {
-                "exec": null
+                "exec": null,
+                "attributeActive": 3,
+                "minValue": 100
             }
         },
         "27": {
             "exec": 204,
             "led": "keyAssigned",
             "attributeMode": {
-                "exec": null
+                "exec": null,
+                "attributeActive": 4,
+                "minValue": 100
             }
         },
         "28": {
             "exec": 205,
             "led": "keyAssigned",
             "attributeMode": {
-                "exec": null
+                "exec": null,
+                "attributeActive": 5,
+                "minValue": 100
             }
         },
         "29": {
             "exec": 206,
             "led": "keyAssigned",
             "attributeMode": {
-                "exec": null
+                "exec": null,
+                "attributeActive": 6,
+                "minValue": 100
             }
         },
         "30": {
             "exec": 207,
             "led": "keyAssigned",
             "attributeMode": {
-                "exec": null
+                "exec": null,
+                "attributeActive": 7,
+                "minValue": 100
             }
         },
         "31": {
             "exec": 208,
             "led": "keyAssigned",
             "attributeMode": {
-                "exec": null
+                "exec": null,
+                "attributeActive": 8,
+                "minValue": 100
             }
         },
         "32": {

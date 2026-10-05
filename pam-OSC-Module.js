@@ -23,7 +23,8 @@ var meterOverloads = {};
 var names = {};
 // Executor fader positions (pitch values) per MIDI device, indexed by pitch channel
 var execFaders = {};
-// Attribute fader state per MIDI device: last values (percent or "-") from MA and touched faders, by pitch channel
+// Attribute fader state per MIDI device: last values (percent or "-") and whether they're active in the programmer
+// from MA, and touched faders, by pitch channel
 var attributeFaders = {};
 var deskLocked = false;
 // Whether a command is being typed in MA's command line (reported by the MA plugin)
@@ -205,13 +206,13 @@ function showExecColors(device) {
 function enterAttributeMode(device, pageNote) {
   setEncoderPage(device, pageNote);
   routing[device].encoderLabels = true;
+  // Values of the new attributes come from MA; until then they are unknown
+  getAttributeFaderState(device).values = {};
+  getAttributeFaderState(device).active = {};
   showEncoderLabels(device);
   showEncoderRings(device);
   showExecButtonLEDs(device);
   if (isAttributeFaderMode(device)) {
-    // Values of the new attributes come from MA; until then they are unknown
-    const state = getAttributeFaderState(device);
-    state.values = {};
     for (let channel = 1; channel <= 8; channel++) moveAttributeFader(device, channel);
   }
   requestAttributeValues();
@@ -229,11 +230,16 @@ function leaveAttributeMode(device) {
 }
 
 // LED of an executor button: in attribute mode, lit if it resets an encoder that has an attribute
-// ("attributeDefault"), off if disabled; otherwise, by its "led" setting, whether its key ("keyAssigned") or
-// MA + key ("maKeyAssigned") has a function, or else whether the executor runs
+// ("attributeDefault") or while that attribute is in the programmer ("attributeActive"), off if disabled;
+// otherwise, by its "led" setting, whether its key ("keyAssigned") or MA + key ("maKeyAssigned") has a
+// function, or else whether the executor runs
 function getButtonLED(device, note) {
   const active = getActiveConfig(device, note);
   if (active.attributeDefault) return getFaderAttributes(device)[active.attributeDefault - 1] ? "On" : "Off";
+  if (active.attributeActive) {
+    const hasAttribute = getFaderAttributes(device)[active.attributeActive - 1];
+    return hasAttribute && getAttributeFaderState(device).active[active.attributeActive] ? "On" : "Off";
+  }
   if (!active.exec && !active.maKey) return "Off";
   if (note.led == "keyAssigned") return keyAssigned[note.exec] ? "On" : "Off";
   if (note.led == "maKeyAssigned") return maKeyAssigned[note.maKey] ? "On" : "Off";
@@ -278,7 +284,9 @@ function requestAttributeValues() {
 }
 
 function getAttributeFaderState(device) {
-  if (!attributeFaders[device]) attributeFaders[device] = { values: {}, touched: {}, releaseTimers: {}, throttles: {} };
+  if (!attributeFaders[device]) {
+    attributeFaders[device] = { values: {}, active: {}, touched: {}, releaseTimers: {}, throttles: {} };
+  }
   return attributeFaders[device];
 }
 
@@ -597,6 +605,22 @@ module.exports = {
           setTimeout(() => sendButtonLED(port, ctrl), 100);
         }
 
+        // Takes the attribute of encoder n (1-8) of the selected fixtures out of the programmer, or puts it in
+        // at its current value
+        if (config.attributeActive) {
+          const channel = config.attributeActive;
+          const attribute = getFaderAttributes(port)[channel - 1];
+          const state = getAttributeFaderState(port);
+          const percent = parseFloat(state.values[channel]);
+          if (attribute && state.active[channel]) {
+            send(ip, oscPort, prefix + "/cmd", { type: "s", value: 'Attribute "' + attribute + '" At KnockOut' });
+          } else if (attribute && !isNaN(percent)) {
+            sendAttributeFader(port, channel, attribute, (percent / 100) * 16380);
+          }
+          // The X-Touch switches a lit LED off when its button is pressed
+          setTimeout(() => sendButtonLED(port, ctrl), 100);
+        }
+
         if (config.maKey) {
           send(ip, oscPort, prefix + "/cmd", { type: "s", value: getMaKeyCommand(page, config.maKey, value > 0) });
         }
@@ -734,6 +758,17 @@ module.exports = {
             getAttributeFaderState(device).values[i + 1] = value;
             moveAttributeFader(device, i + 1);
           });
+        }
+      }
+      if (address === "/AttributesActive") {
+        const actives = ("" + args[0].value).split(";");
+        for (let device of Object.keys(routing)) {
+          if (!isAttributeFaderMode(device)) continue;
+          actives.forEach((active, i) => (getAttributeFaderState(device).active[i + 1] = active == "1"));
+          const notes = routing[device].note;
+          for (let midiNote of Object.keys(notes)) {
+            if (notes[midiNote].attributeMode?.attributeActive) sendButtonLED(device, midiNote);
+          }
         }
       }
       if (address?.includes("/updatePage/current")) {

@@ -103,22 +103,23 @@ local function getName(sequence)
     return sequence["NAME"] .. ";"
 end
 
--- Value of an attribute of a fixture in percent of its range, or "-" if it has none: the programmer value,
--- else the default of the fixture type. Uses the first step of the programmer phaser (GetProgPhaser is undocumented).
+-- Value of an attribute of a fixture in percent of its range, or "-" if it has none, and whether it's active
+-- in the programmer: the programmer value, else the default of the fixture type. Uses the first step of the
+-- programmer phaser (GetProgPhaser is undocumented).
 local function getAttributeValue(fixtureIndex, attributeName)
     local attributeIndex = GetAttributeIndex(attributeName)
     if attributeIndex == nil then
-        return "-"
+        return "-", false
     end
     local uiChannelIndex = GetUIChannelIndex(fixtureIndex, attributeIndex)
     if uiChannelIndex == nil then
-        return "-"
+        return "-", false
     end
 
     local ok, phaser = pcall(GetProgPhaser, uiChannelIndex, false)
     if ok and type(phaser) == "table" and (phaser.mask_active_value or 0) ~= 0 and type(phaser[1]) == "table" and
         type(phaser[1].absolute) == "number" then
-        return string.format("%.1f", phaser[1].absolute)
+        return string.format("%.1f", phaser[1].absolute), true
     end
 
     -- Not in the programmer: the default value of the DMX channel (24 bit)
@@ -127,21 +128,28 @@ local function getAttributeValue(fixtureIndex, attributeName)
         if rtChannel ~= nil and rtChannel["ui_index_first"] == uiChannelIndex then
             local default = rtChannel["dmx_default"]
             if type(default) == "number" and default >= 0 and default <= 0xFFFFFF then
-                return string.format("%.1f", default / 0xFFFFFF * 100)
+                return string.format("%.1f", default / 0xFFFFFF * 100), false
             end
         end
     end
-    return "-"
+    return "-", false
 end
 
--- Values of the attributes (separated by ";") of the first selected fixture, separated by ";"
+-- Values of the attributes (separated by ";") of the first selected fixture, and whether they're active in the
+-- programmer ("1"/"0"), each separated by ";"
 local function getAttributeValues(attributeList)
     local fixtureIndex = SelectionFirst()
     local values = {}
+    local actives = {}
     for attributeName in string.gmatch(attributeList, "[^;]+") do
-        values[#values + 1] = fixtureIndex and getAttributeValue(fixtureIndex, attributeName) or "-"
+        local value, active = "-", false
+        if fixtureIndex then
+            value, active = getAttributeValue(fixtureIndex, attributeName)
+        end
+        values[#values + 1] = value
+        actives[#actives + 1] = active and "1" or "0"
     end
-    return table.concat(values, ";")
+    return table.concat(values, ";"), table.concat(actives, ";")
 end
 
 -- Name of the feature group of the selected feature (e.g. "Position"), or ""
@@ -409,10 +417,11 @@ local function main()
         -- Send the attribute values the pam-osc module asks for (set with SetGlobalVariable "pamOscAttributes")
         local attributeList = GetVar(GlobalVars(), "pamOscAttributes") or ""
         if attributeList ~= "" then
-            local values = getAttributeValues(attributeList)
-            if attributeList .. "|" .. values ~= oldAttributeValues or forceReload then
-                oldAttributeValues = attributeList .. "|" .. values
+            local values, actives = getAttributeValues(attributeList)
+            if attributeList .. "|" .. values .. "|" .. actives ~= oldAttributeValues or forceReload then
+                oldAttributeValues = attributeList .. "|" .. values .. "|" .. actives
                 Cmd('SendOSC ' .. oscEntry .. ' "/Attributes,s,' .. values .. '"')
+                Cmd('SendOSC ' .. oscEntry .. ' "/AttributesActive,s,' .. actives .. '"')
             end
         else
             oldAttributeValues = ""
