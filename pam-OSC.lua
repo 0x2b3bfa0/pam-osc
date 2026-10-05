@@ -108,6 +108,31 @@ end
 -- Value of an attribute of a fixture in percent of its range, or "-" if it has none, and whether it's active
 -- in the programmer: the programmer value, else the default of the fixture type. Uses the first step of the
 -- programmer phaser (GetProgPhaser is undocumented).
+-- Default value of a UI channel of a fixture in percent of its range (from its DMX channel, 24 bit), or nil
+local function getDefaultValue(fixtureIndex, uiChannelIndex)
+    for _, rtIndex in ipairs(GetRTChannels(fixtureIndex) or {}) do
+        local rtChannel = GetRTChannel(rtIndex)
+        if rtChannel ~= nil and rtChannel["ui_index_first"] == uiChannelIndex then
+            local default = rtChannel["dmx_default"]
+            if type(default) == "number" and default >= 0 and default <= 0xFFFFFF then
+                return default / 0xFFFFFF * 100
+            end
+        end
+    end
+    return nil
+end
+
+-- Value of a UI channel of a fixture in percent of its range, or nil, and whether it's active in the programmer:
+-- the programmer value, else the default of the fixture type
+local function getChannelValue(fixtureIndex, uiChannelIndex)
+    local ok, phaser = pcall(GetProgPhaser, uiChannelIndex, false)
+    if ok and type(phaser) == "table" and (phaser.mask_active_value or 0) ~= 0 and type(phaser[1]) == "table" and
+        type(phaser[1].absolute) == "number" then
+        return phaser[1].absolute, true
+    end
+    return getDefaultValue(fixtureIndex, uiChannelIndex), false
+end
+
 local function getAttributeValue(fixtureIndex, attributeName)
     local attributeIndex = GetAttributeIndex(attributeName)
     if attributeIndex == nil then
@@ -117,24 +142,8 @@ local function getAttributeValue(fixtureIndex, attributeName)
     if uiChannelIndex == nil then
         return "-", false
     end
-
-    local ok, phaser = pcall(GetProgPhaser, uiChannelIndex, false)
-    if ok and type(phaser) == "table" and (phaser.mask_active_value or 0) ~= 0 and type(phaser[1]) == "table" and
-        type(phaser[1].absolute) == "number" then
-        return string.format("%.1f", phaser[1].absolute), true
-    end
-
-    -- Not in the programmer: the default value of the DMX channel (24 bit)
-    for _, rtIndex in ipairs(GetRTChannels(fixtureIndex) or {}) do
-        local rtChannel = GetRTChannel(rtIndex)
-        if rtChannel ~= nil and rtChannel["ui_index_first"] == uiChannelIndex then
-            local default = rtChannel["dmx_default"]
-            if type(default) == "number" and default >= 0 and default <= 0xFFFFFF then
-                return string.format("%.1f", default / 0xFFFFFF * 100), false
-            end
-        end
-    end
-    return "-", false
+    local value, active = getChannelValue(fixtureIndex, uiChannelIndex)
+    return value and string.format("%.1f", value) or "-", active
 end
 
 -- Values of the attributes (separated by ";") of the first selected fixture, and whether they're active in the
@@ -348,6 +357,102 @@ local function sendOSC(address, oscType, value)
     Cmd('SendOSC ' .. oscEntry .. ' "' .. address .. ',' .. oscType .. ',' .. (value ~= nil and tostring(value) or "") .. '"')
 end
 
+-- The module sends attribute changes as OSC to this UDP port instead of as commands, which would fill MA's command
+-- line history. The plugin announces that it listens with "/PluginReady"; without that, the module uses commands.
+local pluginPort = 9005
+local listener = nil
+
+local function openListener()
+    local ok, udp = pcall(function()
+        local udp = require("socket").udp()
+        assert(udp:setsockname("*", pluginPort))
+        udp:settimeout(0)
+        return udp
+    end)
+    listener = ok and udp or nil
+    if not ok then
+        Printf("pam-osc: can't listen on port " .. pluginPort .. ": " .. tostring(udp))
+    end
+end
+
+-- Reads an OSC string at a position; returns it and the position after its padding
+local function readOSCString(data, position)
+    local zero = data:find("\0", position, true)
+    if not zero then
+        return nil, #data + 1
+    end
+    return data:sub(position, zero - 1), zero + 1 + (3 - (zero - position) % 4)
+end
+
+-- Address and arguments (types i, f and s) of an OSC message
+local function decodeOSC(data)
+    local address, position = readOSCString(data, 1)
+    local types
+    types, position = readOSCString(data, position)
+    local args = {}
+    for oscType in (types or ""):sub(2):gmatch(".") do
+        if oscType == "i" then
+            args[#args + 1], position = string.unpack(">i4", data, position)
+        elseif oscType == "f" then
+            args[#args + 1], position = string.unpack(">f", data, position)
+        elseif oscType == "s" then
+            args[#args + 1], position = readOSCString(data, position)
+        end
+    end
+    return address, args
+end
+
+-- Sets an attribute of all selected fixtures that have it; newValue(fixture, uiChannel) returns percent or nil
+local function setAttribute(attributeName, newValue)
+    local attributeIndex = GetAttributeIndex(attributeName)
+    if attributeIndex == nil then
+        return
+    end
+    local fixtureIndex = SelectionFirst()
+    while fixtureIndex ~= nil do
+        local uiChannelIndex = GetUIChannelIndex(fixtureIndex, attributeIndex)
+        if uiChannelIndex ~= nil then
+            local value = newValue(fixtureIndex, uiChannelIndex)
+            if value ~= nil then
+                SetProgPhaserValue(uiChannelIndex, 1, { absolute = math.min(math.max(value, 0), 100) })
+            end
+        end
+        fixtureIndex = SelectionNext(fixtureIndex)
+    end
+end
+
+-- Handles the attribute changes the module sent since the last call
+local function receiveFromModule()
+    if not listener then
+        return
+    end
+    while true do
+        local data = listener:receive()
+        if not data then
+            return
+        end
+        local ok, err = pcall(function()
+            local address, args = decodeOSC(data)
+            local attribute, value = args[1], tonumber(args[2])
+            if address == "/pam/attribute/relative" and value then
+                setAttribute(attribute, function(fixture, channel)
+                    local current = getChannelValue(fixture, channel)
+                    return current and current + value
+                end)
+            elseif address == "/pam/attribute/absolute" and value then
+                setAttribute(attribute, function()
+                    return value
+                end)
+            elseif address == "/pam/attribute/default" then
+                setAttribute(attribute, getDefaultValue)
+            end
+        end)
+        if not ok then
+            Printf("pam-osc: can't apply " .. tostring(err))
+        end
+    end
+end
+
 local function getMasterEnabled(masterName)
     if MasterPool()['Grand'][masterName]['FADERENABLED'] then
         return true
@@ -365,6 +470,7 @@ local function main()
 
     Printf("start pam OSC main()")
     updateOSC()
+    openListener()
     local oscTick = 0
     Printf("automaticResendButtons: " .. (automaticResendButtons and "true" or "false"))
     Printf("sendColors: " .. (sendColors and "true" or "false"))
@@ -387,6 +493,10 @@ local function main()
         if oscTick >= 10 then
             oscTick = 0
             updateOSC()
+            -- Only over direct OSC: as SendOSC command, this would fill the command line history
+            if listener and osc then
+                sendOSC("/PluginReady", "i", pluginPort)
+            end
         end
 
         local currentDeskLocked = DeskLocked()
@@ -613,9 +723,18 @@ local function main()
         forceReloadButtons = false
 
         -- delay
-        coroutine.yield(tick)
+        -- Apply the module's attribute changes more often than the rest is updated
+        for _ = 1, 5 do
+            receiveFromModule()
+            coroutine.yield(tick / 5)
+        end
     end
 
+    -- Free the port for the next start
+    if listener then
+        listener:close()
+        listener = nil
+    end
 end
 
 

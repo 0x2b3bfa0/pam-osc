@@ -32,6 +32,10 @@ var cmdLineActive = false;
 // Last button state ("On"/"Off") and fader value (0-127) reported by MA per executor
 var buttonStates = {};
 var execFaderValues = {};
+// The MA plugin applies attribute changes it receives on this port in Lua, which unlike commands doesn't fill MA's
+// command line history. It announces itself with "/PluginReady"; without that, commands are used.
+const PLUGIN_PORT = 9005;
+var pluginReadyAt = 0;
 // Encoder page attributes the selected fixtures have (reported by the MA plugin), null until known
 var availableAttributes = null;
 // Whether the key and the MA + key of an executor have a function (reported by the MA plugin), per executor
@@ -375,12 +379,12 @@ function setFaderTouch(device, channel, touched) {
   }, 500);
 }
 
-// Sends a fader position as attribute value, at most every 50 ms per fader to not flood the command line
+// Sends a fader position as attribute value, at most every 50 ms per fader
 function sendAttributeFader(device, channel, attribute, value) {
   const state = getAttributeFaderState(device);
   const throttle = state.throttles[channel] || (state.throttles[channel] = {});
   const percent = Math.round(Math.min(Math.max(value / 16380, 0), 1) * 1000) / 10;
-  throttle.pending = 'Attribute "' + attribute + '" At Absolute Percent ' + percent;
+  throttle.pending = { attribute, percent };
   if (throttle.timer) return;
 
   const flush = () => {
@@ -388,7 +392,7 @@ function sendAttributeFader(device, channel, attribute, value) {
       throttle.timer = null;
       return;
     }
-    send(ip, oscPort, prefix + "/cmd", { type: "s", value: throttle.pending });
+    changeAttribute(throttle.pending.attribute, { absolute: throttle.pending.percent });
     throttle.pending = null;
     throttle.timer = setTimeout(flush, 50);
   };
@@ -433,6 +437,27 @@ function updateMeters(exec) {
       midiUtils.sendMeter(mapping.device, mapping.meterId, overload ? midiUtils.METER_OVERLOAD_ON : midiUtils.METER_OVERLOAD_OFF);
     }
   });
+}
+
+function isPluginReady() {
+  return Date.now() - pluginReadyAt < 3000;
+}
+
+// Changes an attribute of the selected fixtures: through the MA plugin if it listens, else with a command.
+// change: { relative: percent } (plugin) / step in readout units (command), { absolute: percent } or { default: true }
+function changeAttribute(attribute, change) {
+  if (isPluginReady()) {
+    const value = change.default ? [] : [{ type: "f", value: change.relative ?? change.absolute }];
+    const kind = change.default ? "default" : change.relative !== undefined ? "relative" : "absolute";
+    send(ip, PLUGIN_PORT, "/pam/attribute/" + kind, { type: "s", value: attribute }, ...value);
+    return;
+  }
+  let command = "Attribute \"" + attribute + "\" At Default";
+  if (change.absolute !== undefined) command = "Attribute \"" + attribute + "\" At Absolute Percent " + change.absolute;
+  if (change.relative !== undefined) {
+    command = "Attribute \"" + attribute + "\" At " + (change.relative > 0 ? "+ " : "- ") + Math.abs(change.relative);
+  }
+  send(ip, oscPort, prefix + "/cmd", { type: "s", value: command });
 }
 
 // Mackie Control SysEx device ID: 14 = X-Touch, 15 = X-Touch Extender
@@ -514,10 +539,15 @@ module.exports = {
           change = Math.round(change * 1000) / 1000;
           const plusMinus = change > 0 ? " + " : " - ";
           const attributeToSend = attribute == "current" ? currentAttribute : attribute;
-          send(ip, oscPort, prefix + "/cmd", {
-            type: "s",
-            value: "Attribute " + attributeToSend + " at " + plusMinus + Math.abs(change),
-          });
+          if (routing[port].encoderPage) {
+            // Encoder pages have MA's attribute names, so the plugin can apply them
+            changeAttribute(attributeToSend, { relative: change });
+          } else {
+            send(ip, oscPort, prefix + "/cmd", {
+              type: "s",
+              value: "Attribute " + attributeToSend + " at " + plusMinus + Math.abs(change),
+            });
+          }
         }
       }
       if (address === "/pitch") {
@@ -657,7 +687,7 @@ module.exports = {
         // Resets the attribute of encoder n (1-8) of the selected fixtures to its default
         if (config.attributeDefault) {
           const attribute = getFaderAttributes(port)[config.attributeDefault - 1];
-          if (attribute) send(ip, oscPort, prefix + "/cmd", { type: "s", value: 'Attribute "' + attribute + '" At Default' });
+          if (attribute) changeAttribute(attribute, { default: true });
           // The X-Touch switches a lit LED off when its button is pressed
           setTimeout(() => sendButtonLED(port, ctrl), 100);
         }
@@ -789,6 +819,9 @@ module.exports = {
             if (matches) sendButtonLED(device, midiNote);
           }
         }
+      }
+      if (address === "/PluginReady") {
+        pluginReadyAt = Date.now();
       }
       if (address === "/CmdLine") {
         cmdLineActive = args[0].value == 1;
