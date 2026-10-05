@@ -29,9 +29,11 @@ var attributeFaders = {};
 var deskLocked = false;
 // Whether a command is being typed in MA's command line (reported by the MA plugin)
 var cmdLineActive = false;
-// Last button state ("On"/"Off") and fader value (0-127) reported by MA per executor
+// Last button state ("On"/"Off"), fader value (0-127) and whether it holds a playback (a sequence; not e.g. a
+// master), reported by MA per executor
 var buttonStates = {};
 var execFaderValues = {};
+var execIsPlayback = {};
 // The layer selected in MA's encoder bar (reported by the MA plugin), which attribute encoders change like MA's
 var programmingLayer = "Absolute";
 // Encoder page attributes the selected fixtures have (reported by the MA plugin), null until known
@@ -419,10 +421,12 @@ function getMaKeyCommand(page, exec, pressed) {
   );
 }
 
-// Meters show the fader level of their executor while it runs, and stay dark while it doesn't. Levels 0-13
-// light the green and orange LEDs; the red top one is the overload LED, lit at full.
+// Meters show the fader level of their executor while it runs, and stay dark while it doesn't; executors without a
+// playback (e.g. masters) never run, so they always show it. Levels 0-13 light the green and orange LEDs; the red
+// top one is the overload LED, lit at full.
 function updateMeters(exec) {
-  const value = buttonStates[exec] == "On" ? execFaderValues[exec] || 0 : 0;
+  const shown = buttonStates[exec] == "On" || execIsPlayback[exec] === false;
+  const value = shown ? execFaderValues[exec] || 0 : 0;
   const level = Math.round((value / 127) * 13);
   const overload = value >= 126.5;
   routingUtils.getRoutingByMeterId(routing, exec).forEach((mapping) => {
@@ -798,6 +802,10 @@ module.exports = {
           const value = mapping.permanentFeedback || args[0].value;
           midiUtils.sendNoteResponse(routing, mapping.device, mapping.midiId, value, mapping.buttonFeedbackMapper, mapping.midiChannel);
         });
+      }
+      if (addressSplit[2]?.startsWith("Playback")) {
+        execIsPlayback[fader] = args[0].value == 1;
+        updateMeters(fader);
       }
       if (addressSplit[2]?.startsWith("KeyFn") || addressSplit[2]?.startsWith("MaKeyFn")) {
         const ma = addressSplit[2].startsWith("MaKeyFn");

@@ -17,6 +17,7 @@ local oldColorValues = {}
 local oldNameValues = {}
 local oldKeyAssigned = {}
 local oldMaKeyAssigned = {}
+local oldIsPlayback = {}
 local olsMasterEnabledValue = {
     highlight = false,
     lowlight = false,
@@ -508,6 +509,8 @@ local function main()
             local colorValue = "0,0,0,0"
             local nameValue = ";"
             local keyAssigned = false
+            -- Whether the executor holds a playback (a sequence), which runs or not; masters and the like don't
+            local isPlayback = true
             local maKeyAssigned = false
             local isFlash = false
 
@@ -531,6 +534,8 @@ local function main()
 
                     local myobject = maValue.Object
                     if myobject ~= nil then
+                        local okClass, class = pcall(function() return myobject:GetClass() end)
+                        isPlayback = not okClass or class == "Sequence"
                         -- IsRunningPlayback replaces the deprecated HasActivePlayback, which older versions only have
                         local ok, running = pcall(function() return myobject:IsRunningPlayback() end)
                         if not ok then
@@ -566,6 +571,12 @@ local function main()
                 oldColorValues[listKey] = colorValue
                 local newValue = string.gsub(colorValue, ",", ";")
                 sendOSC("/Page" .. destPage .. "/Color" .. listValue, "s", newValue)
+            end
+
+            -- Send whether it holds a playback
+            if oldIsPlayback[listKey] ~= isPlayback or forceReload then
+                oldIsPlayback[listKey] = isPlayback
+                sendOSC("/Page" .. destPage .. "/Playback" .. listValue, "i", isPlayback and 1 or 0)
             end
 
             -- Send whether the key and MA + key have a function
