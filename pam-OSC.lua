@@ -215,7 +215,12 @@ local function main()
 
                     local myobject = maValue.Object
                     if myobject ~= nil then
-                        buttonValue = myobject:HasActivePlayback() and true or false
+                        -- IsRunningPlayback replaces the deprecated HasActivePlayback, which older versions only have
+                        local ok, running = pcall(function() return myobject:IsRunningPlayback() end)
+                        if not ok then
+                            running = myobject:HasActivePlayback()
+                        end
+                        buttonValue = running and true or false
                         if sendColors then
                             colorValue = getApereanceColor(myobject)
                         end
