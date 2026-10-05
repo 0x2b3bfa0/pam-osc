@@ -486,7 +486,8 @@ module.exports = {
 
       if (addressSplit[2]?.includes("Name")) {
         const mappingsDisplay = routingUtils.getRoutingByDisplayId(routing, fader);
-        const values = args[0].value.split(";");
+        // Shorten MA's default names ("Sequence 12") to fit the 7 characters of a line
+        const values = args[0].value.replace(/Sequence/g, "Seq.").split(";");
 
         mappingsDisplay.forEach((mapping) => {
           if (!names[mapping.device]) names[mapping.device] = [];
