@@ -120,6 +120,22 @@ function setEncoderPage(device, pageNote) {
   routing[device].encoderPage = "" + pageNote;
 }
 
+// MC LED ring value in spread mode (0x30 + width 1-6, lighting 1, 3, 5 ... 11 LEDs from the top center): all LEDs
+const RING_ATTRIBUTE = 0x36;
+
+// LED rings of encoders with an attribute mode: lit if they have an attribute in attribute mode, the executor level otherwise
+function showEncoderRings(device) {
+  const rltvControl = routing[device].rltvControl || {};
+  for (let ctrl of Object.keys(rltvControl)) {
+    const { attributeMode, returnChannel, returnFrom, returnTo, currValue } = rltvControl[ctrl];
+    if (!attributeMode || !returnChannel) continue;
+    const value = routing[device].encoderLabels
+      ? attributeMode.attribute ? RING_ATTRIBUTE : 0
+      : Math.round(utils.mapValue(currValue || 0, 0, 127, returnFrom, returnTo));
+    send("midi", device, "/control", 1, returnChannel, value);
+  }
+}
+
 // Writes both lines (7 characters each) of an LCD
 function sendDisplay(device, slot, upper, lower) {
   const lines = [
@@ -175,11 +191,13 @@ function enterAttributeMode(device, pageNote) {
   setEncoderPage(device, pageNote);
   routing[device].encoderLabels = true;
   showEncoderLabels(device);
+  showEncoderRings(device);
 }
 
 function leaveAttributeMode(device) {
   routing[device].encoderLabels = false;
   showExecNames(device);
+  showEncoderRings(device);
 }
 
 // Meters show the fader level of their executor. Levels 0-13 light the green and orange LEDs; the red top
@@ -443,7 +461,10 @@ module.exports = {
 
         mappingsRltvCtrl.forEach((mapping) => {
           const value = Math.round(utils.mapValue(args[0].value, 0, 127, mapping.from, mapping.to));
-          routing[mapping.device].rltvControl[mapping.id].currValue = args[0].value;
+          const encoder = routing[mapping.device].rltvControl[mapping.id];
+          encoder.currValue = args[0].value;
+          // While the encoder controls attributes, its ring shows whether it has one instead
+          if (getActiveConfig(mapping.device, encoder) !== encoder) return;
           send("midi", mapping.device, "/control", 1, mapping.midiId, value);
         });
 
