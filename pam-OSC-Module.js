@@ -14,9 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-// Todo: Refactor: This is only a temp solution
-var displayDevice = null;
-var colors = ["0;0;0;0", "0;0;0;0", "0;0;0;0", "0;0;0;0", "0;0;0;0", "0;0;0;0", "0;0;0;0", "0;0;0;0"];
+// Display colors per MIDI device, indexed by display slot 0-7
+var colors = {};
 var deskLocked = false;
 
 const utils = require("./utils.js");
@@ -316,20 +315,19 @@ module.exports = {
         const mappingsDisplay = routingUtils.getRoutingByDisplayId(routing, fader);
 
         mappingsDisplay.forEach((mapping) => {
-          colors[mapping.displayId] = args[0].value;
-          displayDevice = mapping.device;
+          if (!colors[mapping.device]) colors[mapping.device] = new Array(8).fill("0;0;0;0");
+          colors[mapping.device][mapping.displayId] = args[0].value;
         });
 
-        if (!displayDevice) {
-          return;
-        }
-        var midiCommand = "F0 00 00 66 " + getMcDeviceId(displayDevice) + " 72";
-        colors.forEach((colorString) => {
-          const color = colorUtils.parseColorString(colorString);
-          const displayColor = colorUtils.findNearestDisplayColor(color);
-          midiCommand = midiCommand + displayColor + " ";
+        new Set(mappingsDisplay.map((mapping) => mapping.device)).forEach((device) => {
+          var midiCommand = "F0 00 00 66 " + getMcDeviceId(device) + " 72 ";
+          colors[device].forEach((colorString) => {
+            const color = colorUtils.parseColorString(colorString);
+            const displayColor = colorUtils.findNearestDisplayColor(color);
+            midiCommand = midiCommand + displayColor + " ";
+          });
+          send("midi", device, "/sysex", midiCommand + "F7");
         });
-        send("midi", displayDevice, "/sysex", midiCommand + "F7");
       }
 
       if (addressSplit[2]?.includes("Name")) {
