@@ -32,8 +32,8 @@ var cmdLineActive = false;
 // Last button state ("On"/"Off") and fader value (0-127) reported by MA per executor
 var buttonStates = {};
 var execFaderValues = {};
-// The MA plugin applies attribute changes it receives on this port in Lua, which unlike commands doesn't fill MA's
-// command line history. It announces itself with "/PluginReady"; without that, commands are used.
+// The MA plugin applies encoder changes it receives on this port in the layer selected in MA's encoder bar, like
+// MA's encoders, which commands can't. It announces itself with "/PluginReady"; without that, commands are used.
 const PLUGIN_PORT = 9005;
 var pluginReadyAt = 0;
 // Encoder page attributes the selected fixtures have (reported by the MA plugin), null until known
@@ -443,13 +443,12 @@ function isPluginReady() {
   return Date.now() - pluginReadyAt < 3000;
 }
 
-// Changes an attribute of the selected fixtures: through the MA plugin if it listens, else with a command.
-// change: { relative: percent } (plugin) / step in readout units (command), { absolute: percent } or { default: true }
+// Changes an attribute of the selected fixtures with MA commands, which act on the step selected in MA's encoder
+// bar like MA does. Encoder steps go through the MA plugin, which also follows the encoder bar's layer.
+// change: { relative: step in readout units }, { absolute: percent } or { default: true }
 function changeAttribute(attribute, change) {
-  if (isPluginReady()) {
-    const value = change.default ? [] : [{ type: "f", value: change.relative ?? change.absolute }];
-    const kind = change.default ? "default" : change.relative !== undefined ? "relative" : "absolute";
-    send(ip, PLUGIN_PORT, "/pam/attribute/" + kind, { type: "s", value: attribute }, ...value);
+  if (change.relative !== undefined && isPluginReady()) {
+    send(ip, PLUGIN_PORT, "/pam/attribute/relative", { type: "s", value: attribute }, { type: "f", value: change.relative });
     return;
   }
   let command = "Attribute \"" + attribute + "\" At Default";

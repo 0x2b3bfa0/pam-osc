@@ -357,8 +357,9 @@ local function sendOSC(address, oscType, value)
     Cmd('SendOSC ' .. oscEntry .. ' "' .. address .. ',' .. oscType .. ',' .. (value ~= nil and tostring(value) or "") .. '"')
 end
 
--- The module sends attribute changes as OSC to this UDP port instead of as commands, which would fill MA's command
--- line history. The plugin announces that it listens with "/PluginReady"; without that, the module uses commands.
+-- The module sends encoder changes of attributes as OSC to this UDP port, so they can follow the layer selected in
+-- MA's encoder bar like MA's encoders, which commands can't. The plugin announces that it listens with
+-- "/PluginReady"; without that, the module uses commands.
 local pluginPort = 9005
 local listener = nil
 
@@ -402,10 +403,6 @@ local function decodeOSC(data)
     return address, args
 end
 
-local function clampPercent(value)
-    return math.min(math.max(value, 0), 100)
-end
-
 -- Copy of a UI channel's programmer phaser that SetProgPhaser accepts, or nil if it isn't in the programmer
 local function copyPhaser(uiChannelIndex)
     local ok, phaser = pcall(GetProgPhaser, uiChannelIndex, false)
@@ -428,28 +425,9 @@ local function copyPhaser(uiChannelIndex)
     return copy
 end
 
--- Sets a UI channel's programmer value. With a phaser (several steps), the first step gets the value and the others
--- move along, so the effect keeps its shape and settings (speed, phase, fade ...).
-local function setChannelValue(uiChannelIndex, value)
-    local phaser = copyPhaser(uiChannelIndex)
-    if not phaser or type(phaser[1].absolute) ~= "number" then
-        -- SetProgPhaserValue doesn't change anything; SetProgPhaser does
-        SetProgPhaser(uiChannelIndex, { { absolute = clampPercent(value) } })
-        return
-    end
-    local shift = value - phaser[1].absolute
-    for _, step in ipairs(phaser) do
-        if type(step.absolute) == "number" then
-            step.absolute = clampPercent(step.absolute + shift)
-        end
-    end
-    SetProgPhaser(uiChannelIndex, phaser)
-end
-
--- Encoder bar layers (the user profile's ProgrammingLayer) and what they change: a value of every step, or a
--- setting of the phaser, with its range, value when unset, and how much a step of the module's encoders changes it
+-- Encoder bar layers (the user profile's ProgrammingLayer) commands can't change, and what they change: a value of
+-- every step, or a setting of the phaser, with its range, value when unset, and how much an encoder step changes it
 local stepLayers = {
-    Absolute = { field = "absolute", min = 0, max = 100 },
     Relative = { field = "relative", min = -100, max = 100 },
     Width = { field = "width", min = 0, max = 100, default = 100 },
     Accel = { field = "accel", min = 0, max = 100 },
@@ -475,15 +453,14 @@ local function limit(value, layer)
     return math.min(math.max(value, layer.min or -math.huge), layer.max or math.huge)
 end
 
--- Changes a UI channel by an encoder step, in the encoder bar's layer like MA's encoders: all steps of a phaser
--- together, or one of its settings
-local function changeChannel(fixtureIndex, uiChannelIndex, delta, defaultValue)
-    local name = getProgrammingLayer()
+-- Changes a UI channel by an encoder step in one of those layers: all steps of a phaser together, or one of its
+-- settings
+local function changeChannel(uiChannelIndex, name, delta, defaultValue)
     local phaser = copyPhaser(uiChannelIndex) or { { absolute = defaultValue } }
     if stepLayers[name] then
         local layer = stepLayers[name]
         for _, step in ipairs(phaser) do
-            local current = step[layer.field] or (layer.field == "absolute" and defaultValue) or layer.default or 0
+            local current = step[layer.field] or layer.default or 0
             step[layer.field] = limit(current + delta, layer)
         end
     elseif phaserLayers[name] then
@@ -495,26 +472,8 @@ local function changeChannel(fixtureIndex, uiChannelIndex, delta, defaultValue)
     SetProgPhaser(uiChannelIndex, phaser)
 end
 
--- Sets an attribute of all selected fixtures that have it; newValue(fixture, uiChannel) returns percent or nil
-local function setAttribute(attributeName, newValue)
-    local attributeIndex = GetAttributeIndex(attributeName)
-    if attributeIndex == nil then
-        return
-    end
-    local fixtureIndex = SelectionFirst()
-    while fixtureIndex ~= nil do
-        local uiChannelIndex = GetUIChannelIndex(fixtureIndex, attributeIndex)
-        if uiChannelIndex ~= nil then
-            local value = newValue(fixtureIndex, uiChannelIndex)
-            if value ~= nil then
-                setChannelValue(uiChannelIndex, value)
-            end
-        end
-        fixtureIndex = SelectionNext(fixtureIndex)
-    end
-end
-
--- Handles the attribute changes the module sent since the last call
+-- Handles the encoder changes the module sent since the last call. In the Absolute layer they're commands: those
+-- only change the step selected in MA's encoder bar, like MA's encoders. Other layers are changed in Lua.
 local function receiveFromModule()
     if not listener then
         return
@@ -527,22 +486,23 @@ local function receiveFromModule()
         local ok, err = pcall(function()
             local address, args = decodeOSC(data)
             local attribute, value = args[1], tonumber(args[2])
-            if address == "/pam/attribute/relative" and value then
-                local attributeIndex = GetAttributeIndex(attribute)
-                local fixtureIndex = attributeIndex and SelectionFirst()
-                while fixtureIndex ~= nil do
-                    local uiChannelIndex = GetUIChannelIndex(fixtureIndex, attributeIndex)
-                    if uiChannelIndex ~= nil then
-                        changeChannel(fixtureIndex, uiChannelIndex, value, getDefaultValue(fixtureIndex, uiChannelIndex) or 0)
-                    end
-                    fixtureIndex = SelectionNext(fixtureIndex)
+            if address ~= "/pam/attribute/relative" or not value then
+                return
+            end
+            local layer = getProgrammingLayer()
+            if layer == "Absolute" then
+                -- %g drops the float noise OSC adds (0.1 arrives as 0.100000001)
+                Cmd('Attribute "' .. attribute .. '" At ' .. (value > 0 and "+ " or "- ") .. string.format("%.6g", math.abs(value)))
+                return
+            end
+            local attributeIndex = GetAttributeIndex(attribute)
+            local fixtureIndex = attributeIndex and SelectionFirst()
+            while fixtureIndex ~= nil do
+                local uiChannelIndex = GetUIChannelIndex(fixtureIndex, attributeIndex)
+                if uiChannelIndex ~= nil then
+                    changeChannel(uiChannelIndex, layer, value, getDefaultValue(fixtureIndex, uiChannelIndex) or 0)
                 end
-            elseif address == "/pam/attribute/absolute" and value then
-                setAttribute(attribute, function()
-                    return value
-                end)
-            elseif address == "/pam/attribute/default" then
-                setAttribute(attribute, getDefaultValue)
+                fixtureIndex = SelectionNext(fixtureIndex)
             end
         end)
         if not ok then
