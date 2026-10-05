@@ -414,7 +414,8 @@ local function setAttribute(attributeName, newValue)
         if uiChannelIndex ~= nil then
             local value = newValue(fixtureIndex, uiChannelIndex)
             if value ~= nil then
-                SetProgPhaserValue(uiChannelIndex, 1, { absolute = math.min(math.max(value, 0), 100) })
+                -- SetProgPhaserValue doesn't change anything; SetProgPhaser does (as a single, static step)
+                SetProgPhaser(uiChannelIndex, { { absolute = math.min(math.max(value, 0), 100) } })
             end
         end
         fixtureIndex = SelectionNext(fixtureIndex)
