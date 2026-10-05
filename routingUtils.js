@@ -18,6 +18,7 @@ module.exports = {
   getRoutingByRltvControlerId: getRoutingByRltvControlerId,
   getRoutingByPitchId: getRoutingByPitchId,
   getRoutingByDisplayId: getRoutingByDisplayId,
+  getRoutingByMeterId: getRoutingByMeterId,
   getRoutingNoteByExecId: getRoutingNoteByExecId,
   getRoutingNoteByCMD: getRoutingNoteByCMD,
   getRoutingNoteWithAttribute: getRoutingNoteWithAttribute,
@@ -104,6 +105,22 @@ function getRoutingByDisplayId(routing, id) {
           displayId: parseInt(display.id),
         });
         return;
+      }
+    });
+  });
+  return returnArray;
+}
+
+function getRoutingByMeterId(routing, id) {
+  const returnArray = [];
+  Object.keys(routing).forEach((device) => {
+    if (!routing[device].meter) return;
+    Object.entries(routing[device].meter).forEach(([meterId, execId]) => {
+      if ("" + execId === "" + id) {
+        returnArray.push({
+          device: device,
+          meterId: parseInt(meterId),
+        });
       }
     });
   });

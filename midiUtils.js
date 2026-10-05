@@ -23,7 +23,16 @@ module.exports = {
   resetSegments: resetSegments,
   updateSegmentsBySlot: updateSegmentsBySlot,
   sendPermanentFeedback: sendPermanentFeedback,
+  sendMeter: sendMeter,
+  METER_OVERLOAD_ON: 0xe,
+  METER_OVERLOAD_OFF: 0xf,
 };
+
+// MC level meter: channel pressure with the strip in the high and the level (0-13) or an overload command
+// (METER_OVERLOAD_ON/OFF) in the low nibble
+function sendMeter(midiDeviceName, strip, level) {
+  send("midi", midiDeviceName, "/sysex", "D0 " + utils.numberIntoHex(strip * 16 + level));
+}
 
 function sendNoteResponse(routing, midiDeviceName, ctrl, value, buttonFeedbackMapper, midiChannel = 1) {
   // for the MC mode, it is required to send a note on with velocity 0

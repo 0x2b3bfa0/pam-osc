@@ -16,7 +16,12 @@
 
 // Display colors per MIDI device, indexed by display slot 0-7
 var colors = {};
+// Meter levels (0-13) and overload LED states per MIDI device, indexed by strip 0-7
+var meters = {};
+var meterOverloads = {};
 var deskLocked = false;
+// Fader value (0-127) reported by MA per executor
+var execFaderValues = {};
 
 const utils = require("./utils.js");
 const colorUtils = require("./colorUtils.js");
@@ -76,6 +81,34 @@ for (let device of Object.keys(routing)) {
 setTimeout(function () {
   oscUtils.triggerForceReload(ip, oscPort, prefix);
 }, 500);
+
+// MC meters and their overload LEDs fall back on their own, so they have to be resent continuously
+setInterval(function () {
+  for (let device of Object.keys(meters)) {
+    meters[device].forEach((level, strip) => {
+      if (level > 0) midiUtils.sendMeter(device, strip, level);
+      if ((meterOverloads[device] || [])[strip]) midiUtils.sendMeter(device, strip, midiUtils.METER_OVERLOAD_ON);
+    });
+  }
+}, 100);
+
+// Meters show the fader level of their executor. Levels 0-13 light the green and orange LEDs; the red top
+// one is the overload LED, lit at full.
+function updateMeters(exec) {
+  const value = execFaderValues[exec] || 0;
+  const level = Math.round((value / 127) * 13);
+  const overload = value >= 126.5;
+  routingUtils.getRoutingByMeterId(routing, exec).forEach((mapping) => {
+    if (!meters[mapping.device]) meters[mapping.device] = new Array(8).fill(0);
+    if (!meterOverloads[mapping.device]) meterOverloads[mapping.device] = new Array(8).fill(false);
+    meters[mapping.device][mapping.meterId] = level;
+    midiUtils.sendMeter(mapping.device, mapping.meterId, level);
+    if (overload != meterOverloads[mapping.device][mapping.meterId]) {
+      meterOverloads[mapping.device][mapping.meterId] = overload;
+      midiUtils.sendMeter(mapping.device, mapping.meterId, overload ? midiUtils.METER_OVERLOAD_ON : midiUtils.METER_OVERLOAD_OFF);
+    }
+  });
+}
 
 // Mackie Control SysEx device ID: 14 = X-Touch, 15 = X-Touch Extender
 function getMcDeviceId(device) {
@@ -291,6 +324,9 @@ module.exports = {
           routing[mapping.device].rltvControl[mapping.id].currValue = args[0].value;
           send("midi", mapping.device, "/control", 1, mapping.midiId, value);
         });
+
+        execFaderValues[fader] = Math.min(Math.max(args[0].value, 0), 127);
+        updateMeters(fader);
       }
       if (addressSplit[2]?.includes("Button")) {
         const mappings = routingUtils.getRoutingNoteByExecId(routing, fader);
