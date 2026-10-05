@@ -301,7 +301,8 @@ local oscDescription = nil
 local function updateOSC()
     local ok, result = pcall(function()
         local entry = ShowData().OSCBase[oscEntry]
-        if entry.MODE ~= "UDP" or not string.pack then
+        -- Lua reads the mode as a boolean, false being UDP (shown as "UDP" in MA)
+        if (entry.MODE ~= false and tostring(entry.MODE):upper() ~= "UDP") or not string.pack then
             return nil
         end
         if not oscUdp then
