@@ -422,12 +422,12 @@ local function main()
 
     -- A newer copy of the plugin (e.g. after importing it again) stops older ones: each start raises the generation,
     -- and a copy stops when it sees a higher one. Copies from before checked "opdateOSC" instead.
-    local generation = (tonumber(GetVar(GlobalVars(), "pamOscGeneration")) or 0) + 1
+    local generation = (tonumber((GetVar(GlobalVars(), "pamOscGeneration"))) or 0) + 1
     SetVar(GlobalVars(), "pamOscGeneration", generation)
     SetVar(GlobalVars(), "opdateOSC", false)
 
     while running do
-        if (tonumber(GetVar(GlobalVars(), "pamOscGeneration")) or 0) > generation then
+        if (tonumber((GetVar(GlobalVars(), "pamOscGeneration"))) or 0) > generation then
             Printf("pam-osc: a newer copy of the plugin started, stopping this one")
             break
         end
