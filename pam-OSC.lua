@@ -23,6 +23,7 @@ local olsMasterEnabledValue = {
 }
 local oldTimecodes = {}
 local oldAttributeValues = ""
+local oldFeatureGroup = ""
 local oldDeskLockedStatus = 0
 
 local oscEntry = 2
@@ -138,6 +139,14 @@ local function getAttributeValues(attributeList)
         values[#values + 1] = fixtureIndex and getAttributeValue(fixtureIndex, attributeName) or "-"
     end
     return table.concat(values, ";")
+end
+
+-- Name of the feature group of the selected feature (e.g. "Position"), or ""
+local function getSelectedFeatureGroup()
+    local ok, name = pcall(function()
+        return SelectedFeature():Parent().name
+    end)
+    return ok and name or ""
 end
 
 local function getMasterEnabled(masterName)
@@ -320,6 +329,13 @@ local function main()
             end
         end
         
+        -- Send the selected feature group
+        local featureGroup = getSelectedFeatureGroup()
+        if featureGroup ~= "" and (featureGroup ~= oldFeatureGroup or forceReload) then
+            oldFeatureGroup = featureGroup
+            Cmd('SendOSC ' .. oscEntry .. ' "/FeatureGroup,s,' .. featureGroup .. '"')
+        end
+
         -- Send the attribute values the pam-osc module asks for (set with SetGlobalVariable "pamOscAttributes")
         local attributeList = GetVar(GlobalVars(), "pamOscAttributes") or ""
         if attributeList ~= "" then

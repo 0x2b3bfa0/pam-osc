@@ -616,6 +616,21 @@ module.exports = {
           midiUtils.sendNoteResponse(routing, mapping.device, mapping.midiId, value, mapping.buttonFeedbackMapper, mapping.midiChannel);
         });
       }
+      // MA reports the selected feature group: follow it with the encoder pages of devices in attribute mode
+      if (address === "/FeatureGroup") {
+        const featureGroup = ("" + args[0].value).toLowerCase();
+        for (let device of Object.keys(routing)) {
+          if (!routing[device].encoderLabels) continue;
+          const notes = routing[device].note;
+          const pageNote = Object.keys(notes).find(
+            (note) => notes[note].local == "encoderPage" && ("" + notes[note].featureGroup).toLowerCase() == featureGroup
+          );
+          if (pageNote && pageNote != routing[device].encoderPage) {
+            enterAttributeMode(device, pageNote);
+            midiUtils.sendEncoderPageLED(routing, device);
+          }
+        }
+      }
       if (address === "/Attributes") {
         const values = ("" + args[0].value).split(";");
         for (let device of Object.keys(routing)) {
