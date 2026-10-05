@@ -27,15 +27,27 @@ module.exports = {
   METER_OVERLOAD_ON: 0xe,
   METER_OVERLOAD_OFF: 0xf,
   sendPageLED: sendPageLED,
+  sendEncoderPageLED: sendEncoderPageLED,
 };
 
-// Lights the page buttons of the current page
+// Lights the button of the active encoder page while its labels are shown
+function sendEncoderPageLED(routing, midiDeviceName) {
+  const device = routing[midiDeviceName];
+  for (let midiNote of Object.keys(device.note)) {
+    if (device.note[midiNote].local == "encoderPage") {
+      const active = device.encoderLabels && midiNote == device.encoderPage;
+      sendNoteResponse(routing, midiDeviceName, parseInt(midiNote), active ? "On" : "Off");
+    }
+  }
+}
+
+// Lights the page buttons of the current page, none while in attribute mode
 function sendPageLED(routing, page) {
   for (let name of Object.keys(routing)) {
     for (let midiNote of Object.keys(routing[name].note)) {
       const note = routing[name].note[midiNote];
       if (note.page) {
-        const active = "" + note.page == "" + page;
+        const active = !routing[name].encoderLabels && "" + note.page == "" + page;
         sendNoteResponse(routing, name, parseInt(midiNote), active ? "On" : "Off");
       }
     }

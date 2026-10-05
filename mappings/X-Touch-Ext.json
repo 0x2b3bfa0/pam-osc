@@ -23,7 +23,12 @@
             "negTo": 72,
             "returnChannel": 48,
             "returnFrom": 32,
-            "returnTo": 43
+            "returnTo": 43,
+            "attributeMode": {
+                "exec": null,
+                "attribute": null,
+                "amount": 0.1
+            }
         },
         "17": {
             "exec": 402,
@@ -34,7 +39,12 @@
             "negTo": 72,
             "returnChannel": 49,
             "returnFrom": 32,
-            "returnTo": 43
+            "returnTo": 43,
+            "attributeMode": {
+                "exec": null,
+                "attribute": null,
+                "amount": 0.1
+            }
         },
         "18": {
             "exec": 403,
@@ -45,7 +55,12 @@
             "negTo": 72,
             "returnChannel": 50,
             "returnFrom": 32,
-            "returnTo": 43
+            "returnTo": 43,
+            "attributeMode": {
+                "exec": null,
+                "attribute": null,
+                "amount": 0.1
+            }
         },
         "19": {
             "exec": 404,
@@ -56,7 +71,12 @@
             "negTo": 72,
             "returnChannel": 51,
             "returnFrom": 32,
-            "returnTo": 43
+            "returnTo": 43,
+            "attributeMode": {
+                "exec": null,
+                "attribute": null,
+                "amount": 0.1
+            }
         },
         "20": {
             "exec": 405,
@@ -67,7 +87,12 @@
             "negTo": 72,
             "returnChannel": 52,
             "returnFrom": 32,
-            "returnTo": 43
+            "returnTo": 43,
+            "attributeMode": {
+                "exec": null,
+                "attribute": null,
+                "amount": 0.1
+            }
         },
         "21": {
             "exec": 406,
@@ -78,7 +103,12 @@
             "negTo": 72,
             "returnChannel": 53,
             "returnFrom": 32,
-            "returnTo": 43
+            "returnTo": 43,
+            "attributeMode": {
+                "exec": null,
+                "attribute": null,
+                "amount": 0.1
+            }
         },
         "22": {
             "exec": 407,
@@ -89,7 +119,12 @@
             "negTo": 72,
             "returnChannel": 54,
             "returnFrom": 32,
-            "returnTo": 43
+            "returnTo": 43,
+            "attributeMode": {
+                "exec": null,
+                "attribute": null,
+                "amount": 0.1
+            }
         },
         "23": {
             "exec": 408,
@@ -100,34 +135,109 @@
             "negTo": 72,
             "returnChannel": 55,
             "returnFrom": 32,
-            "returnTo": 43
+            "returnTo": 43,
+            "attributeMode": {
+                "exec": null,
+                "attribute": null,
+                "amount": 0.1
+            }
         }
     },
     "control": {},
     "note": {
         "0": {
-            "exec": 401
+            "local": "encoderPage",
+            "featureGroup": "Dimmer",
+            "attributes": [
+                "Dimmer"
+            ],
+            "minValue": 100
         },
         "1": {
-            "exec": 402
+            "local": "encoderPage",
+            "featureGroup": "Position",
+            "attributes": [
+                "Pan",
+                "Tilt",
+                "PanRotate",
+                "TiltRotate"
+            ],
+            "minValue": 100
         },
         "2": {
-            "exec": 403
+            "local": "encoderPage",
+            "featureGroup": "Gobo",
+            "attributes": [
+                "Gobo1",
+                "Gobo1_Pos",
+                "Gobo2",
+                "Gobo2_Pos",
+                "Gobo3",
+                "Gobo3_Pos",
+                "AnimationWheel1",
+                "AnimationWheel1_Pos"
+            ],
+            "minValue": 100
         },
         "3": {
-            "exec": 404
+            "local": "encoderPage",
+            "featureGroup": "Color",
+            "attributes": [
+                "ColorRGB_R",
+                "ColorRGB_G",
+                "ColorRGB_B",
+                "ColorAdd_W",
+                "ColorAdd_A",
+                "ColorAdd_UV",
+                "CTO",
+                "Color1"
+            ],
+            "minValue": 100
         },
         "4": {
-            "exec": 405
+            "local": "encoderPage",
+            "featureGroup": "Beam",
+            "attributes": [
+                "Shutter1",
+                "Iris",
+                "Prism1",
+                "Prism1_PosRotate",
+                "Frost1",
+                "Effects1"
+            ],
+            "minValue": 100
         },
         "5": {
-            "exec": 406
+            "local": "encoderPage",
+            "featureGroup": "Focus",
+            "attributes": [
+                "Zoom",
+                "Focus1",
+                "Focus2",
+                "Focus3"
+            ],
+            "minValue": 100
         },
         "6": {
-            "exec": 407
+            "local": "encoderPage",
+            "featureGroup": "Control",
+            "attributes": [],
+            "minValue": 100
         },
         "7": {
-            "exec": 408
+            "local": "encoderPage",
+            "featureGroup": "Shapers",
+            "attributes": [
+                "Blade1A",
+                "Blade1B",
+                "Blade2A",
+                "Blade2B",
+                "Blade3A",
+                "Blade3B",
+                "Blade4A",
+                "Blade4B"
+            ],
+            "minValue": 100
         },
         "8": {
             "page": 1,
@@ -210,28 +320,52 @@
             "exec": 108
         },
         "32": {
-            "exec": 201
+            "exec": 401,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "33": {
-            "exec": 202
+            "exec": 402,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "34": {
-            "exec": 203
+            "exec": 403,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "35": {
-            "exec": 204
+            "exec": 404,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "36": {
-            "exec": 205
+            "exec": 405,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "37": {
-            "exec": 206
+            "exec": 406,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "38": {
-            "exec": 207
+            "exec": 407,
+            "attributeMode": {
+                "exec": null
+            }
         },
         "39": {
-            "exec": 208
+            "exec": 408,
+            "attributeMode": {
+                "exec": null
+            }
         }
     },
     "display": {

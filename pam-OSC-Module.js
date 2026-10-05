@@ -68,6 +68,15 @@ settings.read("midi").forEach((deviceMidi) => {
   routing[name] = value;
 });
 
+// Start every device on its first encoder page
+for (let device of Object.keys(routing)) {
+  const firstPage = Object.keys(routing[device].note).find((note) => routing[device].note[note].local == "encoderPage");
+  if (firstPage) {
+    setEncoderPage(device, firstPage);
+    midiUtils.sendEncoderPageLED(routing, device);
+  }
+}
+
 midiUtils.sendAttributeLED(routing, currentAttribute);
 midiUtils.sendPermanentFeedback(routing);
 
@@ -91,6 +100,32 @@ setInterval(function () {
     });
   }
 }, 100);
+
+// While the encoder labels are shown (attribute mode), a control's "attributeMode" overrides its settings
+function getActiveConfig(device, config) {
+  return routing[device].encoderLabels && config.attributeMode ? { ...config, ...config.attributeMode } : config;
+}
+
+// Assigns the attributes of an encoder page button to the device's attribute encoders, in MIDI CC order
+function setEncoderPage(device, pageNote) {
+  const attributes = routing[device].note[pageNote].attributes || [];
+  const rltvControl = routing[device].rltvControl || {};
+  Object.keys(rltvControl)
+    .filter((ctrl) => rltvControl[ctrl].attributeMode && "attribute" in rltvControl[ctrl].attributeMode)
+    .forEach((ctrl, i) => {
+      rltvControl[ctrl].attributeMode.attribute = attributes[i] || null;
+    });
+  routing[device].encoderPage = "" + pageNote;
+}
+
+function enterAttributeMode(device, pageNote) {
+  setEncoderPage(device, pageNote);
+  routing[device].encoderLabels = true;
+}
+
+function leaveAttributeMode(device) {
+  routing[device].encoderLabels = false;
+}
 
 // Meters show the fader level of their executor. Levels 0-13 light the green and orange LEDs; the red top
 // one is the overload LED, lit at full.
@@ -147,12 +182,14 @@ module.exports = {
         if (!routing[port]["rltvControl"]) {
           return;
         }
+        const rltvControl = routing[port]["rltvControl"][ctrl] && getActiveConfig(port, routing[port]["rltvControl"][ctrl]);
+
         // handle relative Rotary encoders to act as Absolute
-        if (routing[port]["rltvControl"][ctrl] && routing[port]["rltvControl"][ctrl].exec) {
-          const { exec, currValue, posFrom, posTo, negFrom, negTo } = routing[port]["rltvControl"][ctrl];
+        if (rltvControl && rltvControl.exec) {
+          const { exec, currValue, posFrom, posTo, negFrom, negTo } = rltvControl;
         
           // Handle GrandMA encoders Knobs (Playback Section) with relative values 
-          if(routing[port]["rltvControl"][ctrl].exec > 300) {
+          if(exec > 300) {
             var relativeValue = utils.getRelativeValue(value, posFrom, posTo, negFrom, negTo);
             send(ip, oscPort, prefix + "/Page" + page + "/Encoder" + exec, {
               type: "i",
@@ -172,12 +209,15 @@ module.exports = {
         }
 
         // handle attribute Encoders
-        if (routing[port]["rltvControl"][ctrl] && routing[port]["rltvControl"][ctrl].attribute) {
-          const { attribute, posFrom, posTo, negFrom, negTo, amount } = routing[port]["rltvControl"][ctrl];
+        if (rltvControl && rltvControl.attribute) {
+          const { attribute, posFrom, posTo, negFrom, negTo, amount } = rltvControl;
 
           let change = utils.getRelativeValue(value, posFrom, posTo, negFrom, negTo) * amount;
-          change = encoderFine ? change / 10 : change;
+          // Devices with encoder pages set their step size with "amount" and ignore the fine button
+          const fine = !routing[port].encoderPage && encoderFine;
+          change = fine ? change / 10 : change;
           change = encoderRough ? change * 10 : change;
+          change = Math.round(change * 1000) / 1000;
           const plusMinus = change > 0 ? " + " : " - ";
           const attributeToSend = attribute == "current" ? currentAttribute : attribute;
           send(ip, oscPort, prefix + "/cmd", {
@@ -199,7 +239,7 @@ module.exports = {
       }
       if (address === "/note") {
         var [channel, ctrl, value] = args.map((arg) => arg.value);
-        var config = routing[port]["note"][ctrl];
+        var config = routing[port]["note"][ctrl] && getActiveConfig(port, routing[port]["note"][ctrl]);
 
         if (!config) {
           return;
@@ -276,6 +316,9 @@ module.exports = {
         }
 
         if (config.page) {
+          // Page and encoder page buttons form one radio group: a page button switches to playback mode
+          if (routing[port].encoderLabels) leaveAttributeMode(port);
+          midiUtils.sendEncoderPageLED(routing, port);
           // Create the page if it doesn't exist yet, then switch to it; one Lua call keeps both in order
           send(ip, oscPort, prefix + "/cmd", {
             type: "s",
@@ -303,6 +346,17 @@ module.exports = {
           if (config.local == "encoderFine") {
             encoderFine = !encoderFine;
             midiUtils.sendNoteResponse(routing, port, ctrl, encoderFine ? "On" : "Off", null, 1);
+          }
+
+          if (config.local == "encoderPage") {
+            if (config.featureGroup) {
+              send(ip, oscPort, prefix + "/cmd", { type: "s", value: 'FeatureGroup "' + config.featureGroup + '"' });
+            }
+            enterAttributeMode(port, ctrl);
+            midiUtils.sendEncoderPageLED(routing, port);
+            midiUtils.sendPageLED(routing, page);
+            // The X-Touch switches a lit LED off when its button is pressed
+            setTimeout(() => midiUtils.sendEncoderPageLED(routing, port), 100);
           }
 
           if (config.local == "attribute" && config.attribute) {
