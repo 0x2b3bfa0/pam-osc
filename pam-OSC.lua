@@ -272,6 +272,25 @@ local function isKeyAssigned(executor, prefix)
     return ok and assigned or false
 end
 
+-- Executors MA shows on a page: its own, overridden by fixed executors of any page (shown on every page)
+local function getVisibleExecutors(pageIndex)
+    local visible = {}
+    for _, executor in ipairs(DataPool().Pages[pageIndex]:Children()) do
+        visible[executor.No] = executor
+    end
+    for _, page in ipairs(DataPool().Pages:Children()) do
+        for _, executor in ipairs(page:Children()) do
+            local ok, fixed = pcall(function()
+                return executor.FIX
+            end)
+            if ok and (fixed == true or fixed == "Yes") then
+                visible[executor.No] = executor
+            end
+        end
+    end
+    return visible
+end
+
 local function getMasterEnabled(masterName)
     if MasterPool()['Grand'][masterName]['FADERENABLED'] then
         return true
@@ -366,8 +385,8 @@ local function main()
             Cmd('SendOSC ' .. oscEntry .. ' "/updatePage/current,i,' .. destPage)
         end
 
-        -- Get all Executors
-        local executors = DataPool().Pages[destPage]:Children()
+        -- Get all Executors shown on the page, fixed ones included
+        local executors = getVisibleExecutors(destPage)
 
         for listKey, listValue in pairs(executorsToWatch) do
             local faderValue = 0
