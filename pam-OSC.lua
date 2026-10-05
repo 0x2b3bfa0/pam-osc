@@ -366,6 +366,22 @@ local function getProgrammingLayer()
     return ok and tostring(layer) or "Absolute"
 end
 
+-- Fader token of an executor's value: knob executors (encoder rows) turn the function in their ENCODER property,
+-- which isn't necessarily the Master
+local function getFaderToken(executor)
+    local number = executor.No
+    if not (number >= 300 or (number >= 191 and number <= 198) or (number >= 291 and number <= 298)) then
+        return "FaderMaster"
+    end
+    local ok, encoder = pcall(function()
+        return executor.ENCODER
+    end)
+    if ok and type(encoder) == "string" and encoder ~= "" then
+        return "Fader" .. encoder:gsub("[%s%-]", "")
+    end
+    return "FaderMaster"
+end
+
 local function getMasterEnabled(masterName)
     if MasterPool()['Grand'][masterName]['FADERENABLED'] then
         return true
@@ -487,10 +503,15 @@ local function main()
                     maKeyAssigned = isKeyAssigned(maValue, "MAKEY")
                     local faderOptions = {}
                     faderOptions.value = faderEnd
-                    faderOptions.token = "FaderMaster"
+                    faderOptions.token = getFaderToken(maValue)
                     faderOptions.faderDisabled = false
 
-                    faderValue = maValue:GetFader(faderOptions)
+                    local faderOk, value = pcall(function() return maValue:GetFader(faderOptions) end)
+                    if not faderOk or type(value) ~= "number" then
+                        faderOptions.token = "FaderMaster"
+                        value = maValue:GetFader(faderOptions)
+                    end
+                    faderValue = value
                     isFlash = maValue.KEY == "Flash"
 
                     local myobject = maValue.Object
