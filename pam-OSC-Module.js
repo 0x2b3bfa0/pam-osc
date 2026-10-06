@@ -94,13 +94,13 @@ for (let device of Object.keys(routing)) {
   }
 }
 
-// Start every device on its first encoder page
+// Start every device on its first encoder page, in playback mode. The device may still show attribute mode from
+// before a restart, so its encoder page LEDs are switched off even if no page has attributes yet.
 for (let device of Object.keys(routing)) {
-  const firstPage = Object.keys(routing[device].note).find((note) => isEncoderPage(routing[device].note[note]));
-  if (firstPage) {
-    setEncoderPage(device, firstPage);
-    midiUtils.sendEncoderPageLED(routing, device);
-  }
+  const notes = routing[device].note;
+  const firstPage = Object.keys(notes).find((note) => isEncoderPage(notes[note]));
+  if (firstPage) setEncoderPage(device, firstPage);
+  if (Object.values(notes).some((note) => note.local == "encoderPage")) midiUtils.sendEncoderPageLED(routing, device);
 }
 
 midiUtils.sendAttributeLED(routing, currentAttribute);
