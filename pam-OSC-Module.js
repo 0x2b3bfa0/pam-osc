@@ -265,11 +265,15 @@ function showExecColors(device) {
 }
 
 function enterAttributeMode(device, pageNote) {
+  const attributesBefore = routing[device].encoderLabels ? getFaderAttributes(device).join(";") : null;
   setEncoderPage(device, pageNote);
   routing[device].encoderLabels = true;
-  // Values of the new attributes come from MA; until then they are unknown
-  getAttributeFaderState(device).values = {};
-  getAttributeFaderState(device).active = {};
+  // Values of new attributes come from MA; until then they are unknown. MA only reports changes, so the values of
+  // unchanged attributes (e.g. the same page reported again) are kept.
+  if (getFaderAttributes(device).join(";") !== attributesBefore) {
+    getAttributeFaderState(device).values = {};
+    getAttributeFaderState(device).active = {};
+  }
   showEncoderLabels(device);
   showEncoderRings(device);
   showExecButtonLEDs(device);
@@ -731,7 +735,10 @@ module.exports = {
             showEncoderRings(port);
           }
 
-          if (isEncoderPage(config)) {
+          // The active encoder page again: nothing changes, only its LED, which the X-Touch switched off, comes back
+          if (isEncoderPage(config) && routing[port].encoderLabels && routing[port].encoderPage == "" + ctrl) {
+            setTimeout(() => midiUtils.sendEncoderPageLED(routing, port), 100);
+          } else if (isEncoderPage(config)) {
             // Selecting an attribute shows its feature group in MA. "FeatureGroup" goes through MA's encoder
             // banks, which can land on another group (e.g. Dimmer instead of Focus).
             // Pages from MA only have attributes the selection has; others take the first one it has
