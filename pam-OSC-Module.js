@@ -273,6 +273,7 @@ function enterAttributeMode(device, pageNote) {
   showEncoderLabels(device);
   showEncoderRings(device);
   showExecButtonLEDs(device);
+  Object.values(routing[device].meter || {}).forEach(updateMeters);
   if (isAttributeFaderMode(device)) {
     for (let channel = 1; channel <= 8; channel++) moveAttributeFader(device, channel);
   }
@@ -284,6 +285,7 @@ function leaveAttributeMode(device) {
   showExecNames(device);
   showEncoderRings(device);
   showExecButtonLEDs(device);
+  Object.values(routing[device].meter || {}).forEach(updateMeters);
   for (let channel of Object.keys(execFaders[device] || {})) {
     send("midi", device, "/pitch", parseInt(channel), execFaders[device][channel]);
   }
@@ -422,14 +424,14 @@ function getMaKeyCommand(page, exec, pressed) {
 }
 
 // Meters show the fader level of their executor while it runs, and stay dark while it doesn't; executors without a
-// playback (e.g. masters) never run, so they always show it. Levels 0-13 light the green and orange LEDs; the red
-// top one is the overload LED, lit at full.
+// playback (e.g. masters) never run, so they always show it. In attribute mode they're dark, as the strips control
+// attributes. Levels 0-13 light the green and orange LEDs; the red top one is the overload LED, lit at full.
 function updateMeters(exec) {
   const shown = buttonStates[exec] == "On" || execIsPlayback[exec] === false;
-  const value = shown ? execFaderValues[exec] || 0 : 0;
-  const level = Math.round((value / 127) * 13);
-  const overload = value >= 126.5;
   routingUtils.getRoutingByMeterId(routing, exec).forEach((mapping) => {
+    const value = shown && !routing[mapping.device].encoderLabels ? execFaderValues[exec] || 0 : 0;
+    const level = Math.round((value / 127) * 13);
+    const overload = value >= 126.5;
     if (!meters[mapping.device]) meters[mapping.device] = new Array(8).fill(0);
     if (!meterOverloads[mapping.device]) meterOverloads[mapping.device] = new Array(8).fill(false);
     meters[mapping.device][mapping.meterId] = level;
